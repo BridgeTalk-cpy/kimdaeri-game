@@ -1,8 +1,8 @@
 import { store, saveWithRetry, onNet, safeLS } from './store.js';
 import {
   KIM, TYPES, STRATEGIES, R1_CARDS, R2_MISSION, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING,
-  R3_INTRO, R3_CARDS, R3_BUDGET, R3_EMERGENCY, QUADS, FINAL,
-  scoreR1, scoreR2, quadTotals, costOf,
+  R3_INTRO, R3_CARDS, QUADS, FINAL,
+  scoreR1, scoreR2, scoreR3,
 } from './content.js';
 
 const $app = document.getElementById('app');
@@ -19,7 +19,7 @@ const S = {
   runId: null,
   pid: null,
   me: null,       // 내 응답 (로컬 사본)
-  ui: { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, miss: [] }, r3: { started: false, step: 'plan', plan: [], defer: [] } },
+  ui: { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, miss: [] }, r3: { started: false, sel: null } },
   nickDraft: '',
   error: null,
 };
@@ -143,21 +143,31 @@ function viewR2() {
   ui.started = true;
   const place = r2.place || {};
   // 단계 결정
-  const nextPiece = R2_PIECES.findIndex(p => !place[p.id]);
-  if (ui.step === 's1' && nextPiece === -1) ui.step = 's2';
-  if (ui.step === 's1') ui.i = nextPiece;
   const refine = r2.refine || {};
+  if (ui.step === 's1' && Object.keys(refine).length) ui.step = 's2';
   if (ui.step === 's2') {
     const nq = R2_REFINE.findIndex(q => !refine[q.id]);
     if (nq === -1) ui.step = 's3'; else ui.q = nq;
   }
 
   if (ui.step === 's1') {
-    const p = R2_PIECES[ui.i];
-    return top('ROUND 2 · STEP 1 작업 배치하기') + `<div class="progress"><i style="width:${(ui.i / R2_PIECES.length) * 100}%"></i></div>
-      <div class="task"><div class="no">작업 조각 ${ui.i + 1} / ${R2_PIECES.length}</div><div class="tt">${esc(p.title)}${p.dept ? `<span class="dept">${esc(p.dept)}</span>` : ''}</div></div>
-      <div class="q">이 작업은 어느 묶음에 들어갈까요?</div><div class="opts two">` +
-      R2_GROUPS.map(g => `<button class="opt two" data-act="r2place" data-v="${g.id}">${g.label}</button>`).join('') + `</div>`;
+    const pool = R2_PIECES.filter(p => !place[p.id]);
+    const placedN = R2_PIECES.length - pool.length;
+    const chip = (p, inBox) => `<button class="chip-btn ${ui.sel === p.id ? 'picked' : ''} ${inBox ? 'in' : ''}" data-act="${inBox ? 'r2unplace' : 'r2pick'}" data-v="${p.id}">${esc(p.title)}${p.dept ? `<em>${esc(p.dept)}</em>` : ''}</button>`;
+    const box = (g) => {
+      const items = R2_PIECES.filter(p => place[p.id] === g.id);
+      return `<div class="wbox ${g.id === 'big' ? 'bin' : ''} ${ui.sel ? 'ready' : ''}" data-act="r2drop" data-v="${g.id}">
+        <div class="wl">${g.id === 'big' ? '✂️ ' : ''}${g.label}${g.hint ? `<small>${esc(g.hint)}</small>` : ''}</div>
+        <div class="wi">${items.map(p => chip(p, true)).join('') || (ui.sel ? '<span class="ph-in">여기에 넣기</span>' : '')}</div></div>`;
+    };
+    return top('ROUND 2 · STEP 1 작업 배치하기') +
+      `<p class="p-sub" style="margin:0 0 10px">① 아래 작업 카드를 누르고 ② 넣을 칸을 누르세요. 넣은 카드를 다시 누르면 빠집니다.</p>
+      <div class="wtree"><div class="wroot">앱 개선 프로젝트</div><div class="wlines"></div>
+        <div class="wcols">${R2_GROUPS.filter(g => g.id !== 'big').map(box).join('')}</div>
+        ${box(R2_GROUPS.find(g => g.id === 'big'))}</div>
+      <div class="pool-h">아직 넣지 않은 작업 ${pool.length}개</div>
+      <div class="pool">${pool.map(p => chip(p, false)).join('') || '<span class="note">모든 작업을 넣었어요!</span>'}</div>` +
+      sticky(`<button class="btn" data-act="r2next" ${pool.length ? 'disabled' : ''}>${pool.length ? `작업을 모두 넣어 주세요 (${placedN}/${R2_PIECES.length})` : '다음 단계로'}</button>`);
   }
   if (ui.step === 's2') {
     const q = R2_REFINE[ui.q];
@@ -167,8 +177,10 @@ function viewR2() {
       q.options.map(o => `<button class="opt" data-act="r2refine" data-v="${o.id}"><b>${esc(o.text)}</b></button>`).join('') + `</div>`;
   }
   // s3
+  const tree = R2_GROUPS.filter(g => g.id !== 'big').map(g => `<div class="tcol"><b>${g.label}</b>${R2_PIECES.filter(p => place[p.id] === g.id).map(p => `<span>${esc(p.title)}</span>`).join('')}</div>`).join('');
   return top('ROUND 2 · STEP 3 빠진 작업 찾기') +
-    `<div class="box"><p style="margin:0;font-weight:700;font-size:17px">이대로 출시하면 문제가 생깁니다.<br>빠진 작업을 모두 골라 주세요.</p><p class="note">여러 개 선택할 수 있어요.</p></div>
+    `<div class="mytree"><div class="wroot" style="margin-bottom:8px">내가 만든 앱 개선 프로젝트</div><div class="tcols">${tree}</div></div>
+    <div class="box"><p style="margin:0;font-weight:700;font-size:17px">이대로 출시하면 문제가 생깁니다.<br>빠진 작업을 모두 골라 주세요.</p><p class="note">여러 개 선택할 수 있어요.</p></div>
     <div class="opts">` +
     R2_MISSING.map(m => `<button class="opt check ${ui.miss.includes(m.id) ? 'sel' : ''}" data-act="r2miss" data-v="${m.id}">${esc(m.text)}</button>`).join('') +
     `</div>` + sticky(`<button class="btn" data-act="r2done" ${ui.miss.length ? '' : 'disabled'}>제출하기</button>`);
@@ -186,85 +198,55 @@ function viewR2Result(waiting) {
 }
 
 // ---------------- ROUND 3 ----------------
-function cells(used, emergency) {
-  let html = '<div class="cells">';
-  const em = emergency || 0;
-  for (let i = 0; i < R3_BUDGET; i++) {
-    let cls = '';
-    if (i < em) cls = 'em';
-    else if (i < em + used) cls = 'on';
-    html += `<i class="${cls}"></i>`;
-  }
-  return html + '</div>';
-}
-function r3Card(c, sel, off, act) {
-  const cls = sel ? (act === 'r3defer' ? 'defer' : 'sel') : '';
-  return `<button class="r3row ${cls} ${off ? 'off' : ''}" data-act="${act}" data-v="${c.id}">
-    <div class="cost">${c.cost}<small>칸</small></div>
-    <div class="bd"><b>${esc(c.title)}</b><span>⏰ 마감: ${esc(c.due)}</span><span>⚠️ 안 하면: ${esc(c.risk)}</span></div></button>`;
+function matrixHTML(quad, opts = {}) {
+  const cell = (q) => {
+    const items = R3_CARDS.filter(c => quad[c.id] === q);
+    const inner = items.map(c => opts.board
+      ? `<button class="chip-btn in ${S.ui.r3.sel === c.id ? 'picked' : ''}" data-act="r3unplace" data-v="${c.id}">${esc(c.title)}</button>`
+      : `<span class="mchip ${opts.marks && opts.marks[c.id] === false ? 'wrong' : ''}">${esc(c.title)}</span>`).join('');
+    return `<div class="mq ${QUADS[q].cls} ${opts.board && S.ui.r3.sel ? 'ready' : ''}" ${opts.board ? `data-act="r3drop" data-v="${q}"` : ''}>
+      <div class="mql">${q}</div>${inner || (opts.board && S.ui.r3.sel ? '<span class="ph-in">여기에 넣기</span>' : '')}</div>`;
+  };
+  return `<div class="mtx ${opts.small ? 'small' : ''}"><div></div><div class="mx">급하다</div><div class="mx">덜 급하다</div>
+    <div class="my">중요하다</div>${cell(1)}${cell(2)}<div class="my">덜 중요하다</div>${cell(3)}${cell(4)}</div>`;
 }
 
 function viewR3() {
   const r3 = S.me?.r3 || {};
   const ui = S.ui.r3;
   if (r3.done) return viewR3Result(true);
-  if (!ui.started && !r3.plan) {
-    return top('ROUND 3 · 순서 정하기') + `<h1 class="p-title">김대리의 이번 주를 계획하라!</h1>
+  if (!ui.started && !r3.quad) {
+    return top('ROUND 3 · 순서 정하기') + `<h1 class="p-title">김대리의 이번 주, 무엇부터?</h1>
       <div class="box"><p>월요일 아침, 김대리의 이번 주 업무가 쌓여 있습니다.</p>
-      <p style="font-weight:700">${esc(R3_INTRO.time)}</p><p class="note" style="margin:0">${esc(R3_INTRO.note)}</p>
       <div class="crit"><b>김대리의 평가 기준</b><br>${esc(R3_INTRO.criteria)}</div></div>
-      <div class="mission"><b>MISSION</b><br>10칸 안에 이번 주에 할 업무를 골라 주세요. 다 넣을 수는 없습니다.</div>` +
+      <div class="box"><h3>두 가지 질문으로 판단하세요</h3><p>⏰ <b>${esc(R3_INTRO.urgent)}</b></p><p style="margin:0">⚠️ <b>${esc(R3_INTRO.important)}</b></p></div>
+      <div class="mission"><b>MISSION</b><br>김대리의 업무 9가지를 아이젠하워 매트릭스의 알맞은 칸에 넣어 주세요.</div>` +
       sticky(`<button class="btn" data-act="r3start">시작하기</button>`);
   }
   ui.started = true;
-  if (r3.plan && ui.step === 'plan') { ui.step = 'defer'; ui.plan = r3.plan; }
-
-  if (ui.step === 'plan') {
-    const used = costOf(ui.plan);
-    return top('ROUND 3 · 이번 주 계획') +
-      `<div class="meter">${cells(used)}<div class="lbl"><span>사용 ${used} / ${R3_BUDGET}칸</span><span style="color:${used === R3_BUDGET ? 'var(--ok)' : 'var(--muted)'}">${used === R3_BUDGET ? '완성!' : `${R3_BUDGET - used}칸 남음`}</span></div></div>` +
-      R3_CARDS.map(c => {
-        const sel = ui.plan.includes(c.id);
-        const off = !sel && used + c.cost > R3_BUDGET;
-        return r3Card(c, sel, off, 'r3pick');
-      }).join('') +
-      sticky(`<button class="btn" data-act="r3plan" ${used === R3_BUDGET ? '' : 'disabled'}>${used === R3_BUDGET ? '이 계획으로 확정하기' : `10칸을 채워 주세요 (${used}/10)`}</button>`);
-  }
-  // defer
-  const plan = ui.plan;
-  const deferCost = costOf(ui.defer);
-  const remain = costOf(plan) - deferCost;
-  return top('ROUND 3 · 돌발 상황') +
-    `<div class="alarm"><h3>🔔 ${esc(R3_EMERGENCY.when)}</h3><p style="margin:0 0 6px">${esc(R3_EMERGENCY.text)} <b>(${R3_EMERGENCY.cost}칸)</b></p>
-     <p style="margin:0;font-weight:800">${esc(R3_EMERGENCY.ask)}</p></div>
-     <div class="meter">${cells(remain, R3_EMERGENCY.cost)}<div class="lbl"><span>🔴 긴급 ${R3_EMERGENCY.cost}칸 + 남은 계획 ${remain}칸 = ${remain + R3_EMERGENCY.cost}/${R3_BUDGET}칸</span><span style="color:${deferCost === R3_EMERGENCY.cost ? 'var(--ok)' : 'var(--bad)'}">${deferCost === R3_EMERGENCY.cost ? '완성!' : `${R3_EMERGENCY.cost - deferCost}칸 초과`}</span></div></div>
-     <p class="note" style="margin-top:0">다음 주로 미룰 업무를 눌러 주세요.</p>` +
-    R3_CARDS.filter(c => plan.includes(c.id)).map(c => {
-      const sel = ui.defer.includes(c.id);
-      const off = !sel && deferCost + c.cost > R3_EMERGENCY.cost;
-      return r3Card(c, sel, off, 'r3defer');
-    }).join('') +
-    sticky(`<button class="btn" data-act="r3done" ${deferCost === R3_EMERGENCY.cost ? '' : 'disabled'}>이 업무들을 다음 주로 미루기</button>`);
-}
-
-function qbarHTML(t) {
-  const sum = Object.values(t).reduce((a, b) => a + b, 0) || 1;
-  return `<div class="qbar">` + [1, 2, 3, 4].filter(k => t[k]).map(k => `<span class="${QUADS[k].cls}bg" style="width:${(t[k] / sum) * 100}%">${t[k]}칸</span>`).join('') + `</div>`;
+  const quad = r3.quad || {};
+  const pool = seededShuffle(R3_CARDS, hash((S.pid || 'x') + 'r3')).filter(c => !quad[c.id]);
+  return top('ROUND 3 · 매트릭스에 넣기') +
+    `<p class="p-sub" style="margin:0 0 10px">① 아래 업무 카드를 누르고 ② 넣을 칸을 누르세요. 넣은 카드를 다시 누르면 빠집니다.</p>
+    <div class="wtree">${matrixHTML(quad, { board: true })}</div>
+    <div class="pool-h">아직 넣지 않은 업무 ${pool.length}개</div>
+    ${pool.map(c => `<button class="r3row ${ui.sel === c.id ? 'picked' : ''}" data-act="r3pick" data-v="${c.id}">
+      <div class="bd"><b>${esc(c.title)}</b><span>⏰ 마감: ${esc(c.due)}</span><span>⚠️ 안 하면: ${esc(c.risk)}</span></div></button>`).join('') || '<p class="note">모든 업무를 넣었어요!</p>'}` +
+    sticky(`<button class="btn" data-act="r3done" ${pool.length ? 'disabled' : ''}>${pool.length ? `업무를 모두 넣어 주세요 (${R3_CARDS.length - pool.length}/${R3_CARDS.length})` : '제출하기'}</button>`);
 }
 
 function viewR3Result(waiting) {
   const r3 = S.me?.r3 || {};
-  const before = quadTotals(r3.plan);
-  const after = quadTotals((r3.plan || []).filter(id => !(r3.defer || []).includes(id)), true);
-  const lost2 = before[2] - after[2];
-  const fbs = (r3.defer || []).map(id => R3_CARDS.find(c => c.id === id)).filter(Boolean);
-  const dropped = R3_CARDS.filter(c => !(r3.plan || []).includes(c.id));
-  return top('ROUND 3 · 결과') + `<h1 class="p-title">김대리의 이번 주 10칸</h1>
-    <div class="box"><b>계획했을 때</b>${qbarHTML(before)}<div style="height:10px"></div><b>돌발 후 조정했을 때</b>${qbarHTML(after)}
-    <div class="legend">${[1, 2, 3, 4].map(k => `<span>${QUADS[k].dot} ${QUADS[k].short}</span>`).join('')}</div></div>
-    ${lost2 > 0 ? `<div class="box"><p style="font-weight:700;margin:0">급한 일이 들어오자 <b>중요하지만 급하지 않은 일</b>이 ${lost2}칸 줄었어요. 무엇을 지키셨나요?</p></div>` : ''}
-    <div class="box"><h3>내가 미룬 업무</h3>${fbs.map(c => `<div class="fb"><b>${esc(c.title)}</b><br>${esc(c.fb)}</div>`).join('')}
-    ${dropped.length ? `<p class="note">처음 계획에서 뺀 업무: ${dropped.map(c => esc(c.title)).join(', ')}</p>` : ''}</div>` +
+  const quad = r3.quad || {};
+  const sc = scoreR3(r3);
+  const answer = Object.fromEntries(R3_CARDS.map(c => [c.id, c.q]));
+  const marks = Object.fromEntries(R3_CARDS.map(c => [c.id, quad[c.id] === c.q]));
+  const wrong = R3_CARDS.filter(c => quad[c.id] && quad[c.id] !== c.q);
+  return top('ROUND 3 · 결과') + `<h1 class="p-title">내 매트릭스 vs 정답</h1>
+    <div class="score" style="grid-template-columns:1fr"><div><b>${sc.ok} / ${sc.total}</b><span>정답과 같은 칸에 넣은 업무</span></div></div>
+    <div class="box"><h3>내 매트릭스</h3>${matrixHTML(quad, { small: true, marks })}<p class="note">빨간 테두리 = 정답과 다른 칸</p></div>
+    <div class="box"><h3>정답 매트릭스</h3>${matrixHTML(answer, { small: true })}</div>
+    ${wrong.length ? `<div class="box"><h3>다르게 넣은 업무</h3>${wrong.map(c => `<div class="fb"><b>${esc(c.title)}</b> → 정답 ${QUADS[c.q].dot} ${c.q}사분면<br>${esc(c.reason)}</div>`).join('')}</div>` : ''}` +
     (waiting ? waitBox('👀', '다른 분들을 기다리는 중<span class="dots"></span>', '모두 끝나면 강사님이 결과를 공개합니다.') : '');
 }
 
@@ -336,10 +318,17 @@ function act(a, v) {
       save({ r1: { answers: { [c.id]: { strat: v } }, ...(last ? { done: true } : {}) } }); scrollTo(0, 0); break;
     }
     case 'r2start': ui.r2.started = true; render(); scrollTo(0, 0); break;
-    case 'r2place': {
-      const p = R2_PIECES[ui.r2.i];
-      save({ r2: { place: { [p.id]: v } } }); scrollTo(0, 0); break;
+    case 'r2pick': ui.r2.sel = ui.r2.sel === v ? null : v; render(); break;
+    case 'r2drop': {
+      if (!ui.r2.sel) return;
+      const id = ui.r2.sel; ui.r2.sel = null;
+      save({ r2: { place: { [id]: v } } }); break;
     }
+    case 'r2unplace': {
+      if (ui.r2.sel) { const g = S.me?.r2?.place?.[v]; const id = ui.r2.sel; ui.r2.sel = null; save({ r2: { place: { [id]: g } } }); break; }
+      save({ r2: { place: { [v]: null } } }); break;
+    }
+    case 'r2next': ui.r2.step = 's2'; render(); scrollTo(0, 0); break;
     case 'r2refine': {
       const q = R2_REFINE[ui.r2.q];
       save({ r2: { refine: { [q.id]: v } } }); scrollTo(0, 0); break;
@@ -350,20 +339,17 @@ function act(a, v) {
     }
     case 'r2done': save({ r2: { missing: [...ui.r2.miss], done: true } }); scrollTo(0, 0); break;
     case 'r3start': ui.r3.started = true; render(); scrollTo(0, 0); break;
-    case 'r3pick': {
-      const p = ui.r3.plan; const i = p.indexOf(v);
-      if (i >= 0) p.splice(i, 1);
-      else if (costOf(p) + (R3_CARDS.find(c => c.id === v)?.cost || 0) <= R3_BUDGET) p.push(v);
-      render(); break;
+    case 'r3pick': ui.r3.sel = ui.r3.sel === v ? null : v; render(); break;
+    case 'r3drop': {
+      if (!ui.r3.sel) return;
+      const id = ui.r3.sel; ui.r3.sel = null;
+      save({ r3: { quad: { [id]: +v } } }); break;
     }
-    case 'r3plan': ui.r3.step = 'defer'; save({ r3: { plan: [...ui.r3.plan] } }); scrollTo(0, 0); break;
-    case 'r3defer': {
-      const d = ui.r3.defer; const i = d.indexOf(v);
-      if (i >= 0) d.splice(i, 1);
-      else if (costOf(d) + (R3_CARDS.find(c => c.id === v)?.cost || 0) <= R3_EMERGENCY.cost) d.push(v);
-      render(); break;
+    case 'r3unplace': {
+      if (ui.r3.sel) { const q = S.me?.r3?.quad?.[v]; const id = ui.r3.sel; ui.r3.sel = null; save({ r3: { quad: { [id]: q } } }); break; }
+      save({ r3: { quad: { [v]: null } } }); break;
     }
-    case 'r3done': save({ r3: { defer: [...ui.r3.defer], done: true } }); scrollTo(0, 0); break;
+    case 'r3done': save({ r3: { done: true } }); scrollTo(0, 0); break;
   }
 }
 $app.addEventListener('click', (e) => {
@@ -389,8 +375,7 @@ async function boot() {
       S.pid = idStore.get(key);
       if (!S.pid) { S.pid = rid(); idStore.set(key, S.pid); }
       try { S.me = await store.getPlayer(S.runId, S.pid); } catch { S.me = null; }
-      S.ui = { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, miss: [] }, r3: { started: false, step: 'plan', plan: [], defer: [] } };
-      if (S.me?.r3?.plan) { S.ui.r3.plan = [...S.me.r3.plan]; }
+      S.ui = { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, miss: [] }, r3: { started: false, sel: null } };
     }
     onPhaseChange(sess?.phase);
     render();

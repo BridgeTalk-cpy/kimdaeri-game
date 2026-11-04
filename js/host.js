@@ -2,7 +2,7 @@ import { store } from './store.js';
 import { HOST_PIN, WIFI, COURSE_TITLE } from './config.js';
 import {
   PHASES, TYPES, STRATEGIES, R1_CARDS, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING,
-  R3_CARDS, R3_EMERGENCY, QUADS, FINAL, scoreR1, scoreR2, quadTotals,
+  R3_CARDS, QUADS, FINAL, scoreR1, scoreR2,
 } from './content.js';
 
 const $ = document.getElementById('host');
@@ -11,7 +11,7 @@ const pct = (a, b) => b ? Math.round((a / b) * 100) : 0;
 
 const H = {
   authed: false, session: null, players: [], fake: [], useFake: false,
-  tab: 'live', scene: { r1: 0, r2: 0, r3: 0 }, flipped: new Set(), resetArm: false, unsub: null,
+  tab: 'live', scene: { r1: 0, r2: 0, r3: 0 }, r1card: 0, r1open: false, r3card: 0, r3open: false, flipped: new Set(), resetArm: false, unsub: null,
 };
 try { H.authed = sessionStorage.getItem('kimdaeri_host') === '1'; } catch {}
 
@@ -46,21 +46,14 @@ function makeFake(n = 70) {
     const missing = Object.keys(mp).filter(id => r() < mp[id]);
     if (!missing.length) missing.push('m1');
     // R3
-    const removeW = { t9: 5, t4: 3, t7: 4, t8: 2, t6: 2, t5: 1, t3: 0.5, t1: 0.2, t2: 0.2 };
-    let plan = R3_CARDS.map(c => c.id);
-    let need = 2;
-    while (need > 0) {
-      const cand = plan.filter(id => R3_CARDS.find(c => c.id === id).cost <= need).map(id => [id, removeW[id] || 1]);
-      const id = pickW(r, cand); plan = plan.filter(x => x !== id); need -= R3_CARDS.find(c => c.id === id).cost;
+    const quad = {};
+    for (const c of R3_CARDS) {
+      if (c.id === 't8') quad[c.id] = pickW(r, [[1, 40], [3, 30], [2, 25], [4, 5]]);
+      else if (c.id === 't3') quad[c.id] = pickW(r, [[1, 55], [3, 35], [2, 8], [4, 2]]);
+      else if (c.id === 't7') quad[c.id] = pickW(r, [[2, 55], [4, 35], [1, 5], [3, 5]]);
+      else quad[c.id] = r() < 0.7 ? c.q : 1 + Math.floor(r() * 4);
     }
-    const deferW = { t7: 5, t8: 3, t6: 3, t5: 2, t9: 4, t4: 4, t3: 1, t1: 0.3, t2: 0.3 };
-    let defer = []; need = 2;
-    while (need > 0) {
-      const cand = plan.filter(id => !defer.includes(id) && R3_CARDS.find(c => c.id === id).cost <= need).map(id => [id, deferW[id] || 1]);
-      if (!cand.length) break;
-      const id = pickW(r, cand); defer.push(id); need -= R3_CARDS.find(c => c.id === id).cost;
-    }
-    out.push({ id: 'fake' + k, fake: true, nick: '가상' + (k + 1), r1: { answers, done: true }, r2: { place, refine, missing, done: true }, r3: { plan, defer, done: true } });
+    out.push({ id: 'fake' + k, fake: true, nick: '가상' + (k + 1), r1: { answers, done: true }, r2: { place, refine, missing, done: true }, r3: { quad, done: true } });
   }
   return out;
 }
@@ -103,49 +96,28 @@ function viewLive() {
 // ---------------- ROUND 1 결과 ----------------
 function viewR1() {
   const ps = all().filter(p => p.r1?.answers);
-  const N = ps.length;
-  const names = ['아는 것과 하는 것', '함정 보기', '논쟁 카드 6번', '카드별 전체', '업무 4유형 정의', '4가지 처리 전략'];
+  const names = ['카드별 정답 공개', '업무 4유형 정의', '4가지 처리 전략'];
   const s = H.scene.r1;
   let body = '';
-  if (!N && s < 4) body = `<div class="s-sub">아직 응답이 없습니다.</div>`;
-  else if (s === 0) {
-    let t = 0, st = 0, cnt = 0;
-    for (const p of ps) { const sc = scoreR1(p.r1); const answered = Object.values(p.r1.answers).filter(a => a.strat).length; if (!answered) continue; t += sc.type; st += sc.strat; cnt += answered; }
-    body = `<div class="s-title">아는 것과 하는 것의 차이</div><div class="s-sub">응답 ${N}명 평균</div>
-      <div class="big2"><div><b>${pct(t, cnt)}%</b><span>유형 분류 정답률</span></div><div><b>${pct(st, cnt)}%</b><span>처리 전략 정답률</span></div></div>
-      ${say('업무는 잘 나누는데, 처리는 다르게 하고 있죠.')}`;
+  if (s === 0) {
+    const i = H.r1card, c = R1_CARDS[i], open = H.r1open;
+    const a = ps.map(p => p.r1.answers[c.id]).filter(Boolean);
+    const at = a.filter(x => x.type).length, as = a.filter(x => x.strat).length;
+    const typeBars = TYPES.map(t => bar(t.label, a.filter(x => x.type === t.id).length, at, open && t.id === c.type[0] ? 'ok' : '')).join('');
+    const stratBars = STRATEGIES.map(st => bar(st.label, a.filter(x => x.strat === st.id).length, as, open && st.id === c.strat ? 'ok' : '')).join('');
+    const ansType = TYPES.find(t => t.id === c.type[0]).label;
+    const ansStrat = STRATEGIES.find(t => t.id === c.strat).label;
+    body = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        ${R1_CARDS.map((x, k) => `<button class="h-btn sm" style="${k === i ? 'background:var(--navy);color:#fff' : 'background:#eef1f5'}" data-act="r1card" data-v="${k}">${k + 1}</button>`).join('')}
+        <span style="color:var(--muted);margin-left:8px">응답 ${at}명</span></div>
+      <div class="s-title">카드 ${i + 1}. ${esc(c.title)}</div><div class="s-sub">${esc(c.text)}</div>
+      <div class="grid-cards r1grid"><div class="mini"><h4>Q1. 어떤 유형인가요?</h4>${typeBars}</div><div class="mini"><h4>Q2. 어떻게 처리할까요?</h4>${stratBars}</div></div>
+      ${open ? `<div class="answer"><div class="ans-h"><span>정답</span><b>${ansType}</b><i>→</i><b>${ansStrat}</b>${c.type.length > 1 ? `<small>(${TYPES.find(t => t.id === c.type[1]).label}도 인정)</small>` : ''}</div><p>${esc(c.reason)}</p></div>`
+        : `<div style="text-align:center;margin-top:24px"><button class="btn" style="max-width:360px;margin:0 auto;font-size:22px" data-act="r1open">정답 공개</button></div>`}
+      <div style="display:flex;justify-content:space-between;margin-top:20px">
+        <button class="h-btn" style="background:#eef1f5" data-act="r1card" data-v="${Math.max(0, i - 1)}" ${i === 0 ? 'disabled' : ''}>◀ 이전 카드</button>
+        ${i < R1_CARDS.length - 1 ? `<button class="h-btn" style="background:var(--navy);color:#fff" data-act="r1card" data-v="${i + 1}">다음 카드 ▶</button>` : `<button class="h-btn" style="background:var(--navy);color:#fff" data-act="scene" data-k="r1" data-v="1">업무 4유형 정의 ▶</button>`}</div>`;
   } else if (s === 1) {
-    const rows = R1_CARDS.map(c => {
-      const g = ps.filter(p => p.r1.answers[c.id]?.strat === 'gap').length;
-      const sp = ps.filter(p => p.r1.answers[c.id]?.strat === 'spare').length;
-      const tot = ps.filter(p => p.r1.answers[c.id]?.strat).length;
-      return { c, g, sp, tot, sum: g + sp };
-    }).sort((a, b) => pct(b.sum, b.tot) - pct(a.sum, a.tot));
-    body = `<div class="s-title">함정 보기를 고른 비율</div><div class="s-sub">'틈틈이 하기' 또는 '여유 있을 때 하기'를 고른 비율 (높은 순)</div>
-      <div class="bars">${rows.map((r, i) => bar(`${esc(r.c.title)}`, r.sum, r.tot, i < 2 ? 'trap' : '')).join('')}</div>
-      <div class="grid-cards" style="margin-top:20px"><div class="say" style="margin:0">💬 <b>틈틈이 하기</b> → 핵심업무는 계속 끊기고, 프로젝트는 점검 없이 흘러갑니다.</div>
-      <div class="say" style="margin:0">💬 <b>여유 있을 때 하기</b> → 여유는 오지 않습니다. 미래준비성 업무는 늘 뒤로 밀려요.</div></div>`;
-  } else if (s === 2) {
-    const c = R1_CARDS.find(c => c.id === 'c6');
-    const a = ps.map(p => p.r1.answers.c6).filter(x => x?.type);
-    const coreP = a.filter(x => x.type === 'core');
-    const coreSplit = coreP.filter(x => x.strat === 'split').length;
-    body = `<div class="s-title">카드 6. ${esc(c.title)}</div><div class="s-sub">${esc(c.text)}</div>
-      <div class="bars">${TYPES.map(t => bar(t.label, a.filter(x => x.type === t.id).length, a.length, c.type.includes(t.id) ? 'ok' : '')).join('')}</div>
-      ${say('핵심업무를 고른 분도, 프로젝트성 업무를 고른 분도 계시네요. 어떤 기준으로 판단하셨어요?')}
-      <div class="say" style="background:#eef3f9;border-color:var(--navy)">📊 핵심업무를 고른 분 중 <b>${pct(coreSplit, coreP.length)}%</b>도 처리 전략은 <b>'쪼개서 관리하기'</b>를 고르셨습니다.</div>
-      <div class="say">얼마나 중요한가와 어떻게 관리해야 하는가는 <b>다른 기준</b>입니다.</div>`;
-  } else if (s === 3) {
-    body = `<div class="s-title">카드별 응답 전체</div><div class="s-sub">초록색이 의도한 답</div><div class="grid-cards">` +
-      R1_CARDS.map((c, i) => {
-        const a = ps.map(p => p.r1.answers[c.id]).filter(Boolean);
-        const at = a.filter(x => x.type).length, as = a.filter(x => x.strat).length;
-        return `<div class="mini"><h4>${i + 1}. ${esc(c.title)}${c.debate ? ' ⚡' : ''}</h4>
-          ${TYPES.map(t => bar(t.label, a.filter(x => x.type === t.id).length, at, c.type.includes(t.id) ? 'ok' : '')).join('')}
-          <div style="height:8px"></div>
-          ${STRATEGIES.map(st => bar(st.label, a.filter(x => x.strat === st.id).length, as, st.id === c.strat ? 'ok' : st.trap ? 'trap' : '')).join('')}</div>`;
-      }).join('') + `</div>`;
-  } else if (s === 4) {
     body = `<div class="s-title">업무 4유형의 정의와 구분 순서</div><div class="s-sub">위에서부터 차례로 질문합니다</div>
       <table class="tbl"><tr><th>순서</th><th>구분하는 질문</th><th>예 →</th></tr>
       <tr><td>①</td><td>정해진 결과물을 완성하면 종료되는 업무인가?</td><td><b>프로젝트성 업무</b></td></tr>
@@ -153,7 +125,7 @@ function viewR1() {
       <tr><td>③</td><td>내 직무에서 반복적으로 책임지고 수행하는 주요 업무인가?</td><td><b>핵심업무</b></td></tr>
       <tr><td>④</td><td>주요 성과를 뒷받침하는 지원 업무인가?</td><td><b>보조업무</b></td></tr></table>
       ${say('"끝이 있는가?"를 먼저 묻습니다. 끝이 있는 일은 중요도와 상관없이 쪼개서 관리해야 하니까요.')}`;
-  } else if (s === 5) {
+  } else if (s === 2) {
     body = `<div class="s-title">4가지 업무처리 전략</div><div class="s-sub">유형에 따라 처리 방법이 다릅니다</div>
       <table class="tbl"><tr><th>유형</th><th>전략</th><th>한 줄 설명</th></tr>
       ${STRATEGIES.filter(s => !s.trap).map(s => `<tr><td>${TYPES.find(t => t.id === s.type).label}</td><td><b>${s.label}</b></td><td>${s.desc}</td></tr>`).join('')}</table>
@@ -172,7 +144,7 @@ function viewR2() {
   if (!ps.length && s < 3) body = `<div class="s-sub">아직 응답이 없습니다.</div>`;
   else if (s === 0) {
     const traps = R2_PIECES.filter(p => p.trap);
-    body = `<div class="s-title">'아직 너무 크다'를 알아챈 비율</div><div class="s-sub">STEP 1에서 함정 카드를 '아직 너무 크다'로 고른 비율</div>
+    body = `<div class="s-title">'더 쪼개야 할 작업'을 알아챈 비율</div><div class="s-sub">STEP 1에서 이 카드를 '더 쪼개야 할 작업'에 넣은 비율</div>
       <div class="bars">${traps.map(p => { const a = ps.filter(x => x.r2.place?.[p.id]); return bar(esc(p.title), a.filter(x => x.r2.place[p.id] === 'big').length, a.length, 'trap'); }).join('')}</div>
       <div class="grid-cards" style="margin-top:20px">${R2_REFINE.map(q => {
         const a = ps.filter(x => x.r2.refine?.[q.id]);
@@ -208,52 +180,48 @@ function viewR2() {
 }
 
 // ---------------- ROUND 3 결과 ----------------
+function hostMatrix(cellFn) {
+  const q = (n) => `<div class="quad ${QUADS[n].cls}"><h4>${n}. ${QUADS[n].label}</h4>${cellFn(n)}</div>`;
+  return `<div class="matrix"><div></div><div class="ax">급하다</div><div class="ax">덜 급하다</div>
+    <div class="ax v">중요하다</div>${q(1)}${q(2)}<div class="ax v">덜 중요하다</div>${q(3)}${q(4)}</div>`;
+}
 function viewR3() {
-  const ps = all().filter(p => p.r3?.plan);
-  const N = ps.length;
-  const names = ['매트릭스', "'오늘 중으로'", '가장 많이 미룬 업무', '계획 vs 조정', '판단 기준과 처리 방법', '전체 마무리'];
+  const ps = all().filter(p => p.r3?.quad);
+  const names = ['카드별 정답 공개', '우리 반 vs 정답', '판단 기준과 처리 방법', '전체 마무리'];
   const s = H.scene.r3;
   let body = '';
-  const inPlan = (id) => ps.filter(p => p.r3.plan.includes(id)).length;
-  if (!N && s < 4) body = `<div class="s-sub">아직 응답이 없습니다.</div>`;
-  else if (s === 0) {
-    const quad = (q) => `<div class="quad ${QUADS[q].cls}"><h4>${q}. ${QUADS[q].label}</h4>${R3_CARDS.filter(c => c.q === q).map(c => `<div class="chip ${c.id === 't8' ? 'hl' : ''}"><span>${esc(c.title)}</span><b>${pct(inPlan(c.id), N)}%</b></div>`).join('')}
-      ${q === 1 ? `<div class="chip" style="background:#fff0f0"><span>🔔 돌발: 긴급 차단 기준 업데이트</span><b>+${R3_EMERGENCY.cost}칸</b></div>` : ''}</div>`;
-    body = `<div class="s-title">아이젠하워 매트릭스</div><div class="s-sub">숫자 = 처음 계획에 넣은 비율 (응답 ${N}명)</div>
-      <div class="matrix"><div></div><div class="ax">급하다</div><div class="ax">덜 급하다</div>
-      <div class="ax v">중요하다</div>${quad(1)}${quad(2)}<div class="ax v">덜 중요하다</div>${quad(3)}${quad(4)}</div>`;
+  const dist = (c) => { const a = ps.map(p => p.r3.quad[c.id]).filter(Boolean); return { a, n: a.length }; };
+  if (s === 0) {
+    const i = H.r3card, c = R3_CARDS[i], open = H.r3open;
+    const { a, n } = dist(c);
+    body = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        ${R3_CARDS.map((x, k) => `<button class="h-btn sm" style="${k === i ? 'background:var(--navy);color:#fff' : 'background:#eef1f5'}" data-act="r3card" data-v="${k}">${k + 1}</button>`).join('')}
+        <span style="color:var(--muted);margin-left:8px">응답 ${n}명</span></div>
+      <div class="s-title">${i + 1}. ${esc(c.title)}</div><div class="s-sub">⏰ 마감: ${esc(c.due)} · ⚠️ 안 하면: ${esc(c.risk)}</div>
+      ${hostMatrix(q => `<div class="bigpct ${open && q === c.q ? 'hit' : ''}">${pct(a.filter(x => x === q).length, n)}%</div>`)}
+      ${open ? `<div class="answer"><div class="ans-h"><span>정답</span><b>${QUADS[c.q].dot} ${c.q}사분면 · ${QUADS[c.q].label}</b><i>→</i><b>${QUADS[c.q].how}</b></div><p>${esc(c.reason)}</p></div>`
+        : `<div style="text-align:center;margin-top:20px"><button class="btn" style="max-width:360px;margin:0 auto;font-size:22px" data-act="r3open">정답 공개</button></div>`}
+      <div style="display:flex;justify-content:space-between;margin-top:20px">
+        <button class="h-btn" style="background:#eef1f5" data-act="r3card" data-v="${Math.max(0, i - 1)}" ${i === 0 ? 'disabled' : ''}>◀ 이전 카드</button>
+        ${i < R3_CARDS.length - 1 ? `<button class="h-btn" style="background:var(--navy);color:#fff" data-act="r3card" data-v="${i + 1}">다음 카드 ▶</button>` : `<button class="h-btn" style="background:var(--navy);color:#fff" data-act="scene" data-k="r3" data-v="1">우리 반 vs 정답 ▶</button>`}</div>`;
   } else if (s === 1) {
-    body = `<div class="s-title">'오늘 중으로' 요청한 데이터 추출</div><div class="s-sub">실제 활용은 다음 주, 마감 협의 가능</div>
-      <div class="big2"><div><b>${pct(inPlan('t8'), N)}%</b><span>이번 주 계획에 넣음</span></div><div><b>${pct(inPlan('t5'), N)}%</b><span>'개선 범위 확정'을 넣음</span></div></div>
-      ${say("'오늘 중으로' 요청한 데이터 추출, 몇 분이나 넣으셨나요? 실제 활용은 언제였죠? <b>다음 주였습니다.</b>")}`;
+    const major = Object.fromEntries(R3_CARDS.map(c => { const { a } = dist(c); let best = 0, bq = 0; for (const q of [1, 2, 3, 4]) { const k = a.filter(x => x === q).length; if (k > best) { best = k; bq = q; } } return [c.id, bq]; }));
+    const chips = (map, mark) => (q) => R3_CARDS.filter(c => map[c.id] === q).map(c => `<div class="chip ${mark && c.q !== q ? 'hl' : ''}"><span>${esc(c.title)}</span></div>`).join('');
+    body = `<div class="s-title">우리 반 매트릭스 vs 정답 매트릭스</div><div class="s-sub">우리 반 = 가장 많은 분이 넣은 칸 (응답 ${ps.length}명) · 주황 테두리 = 정답과 다른 카드</div>
+      <div class="grid-cards"><div><h3 style="margin:0 0 8px">우리 반</h3>${hostMatrix(chips(major, true))}</div>
+      <div><h3 style="margin:0 0 8px">정답</h3>${hostMatrix(chips(Object.fromEntries(R3_CARDS.map(c => [c.id, c.q]))))}</div></div>`;
   } else if (s === 2) {
-    const d = ps.filter(p => p.r3.defer);
-    const rows = R3_CARDS.map(c => ({ c, n: d.filter(p => p.r3.defer.includes(c.id)).length })).sort((a, b) => b.n - a.n).slice(0, 3);
-    const top2 = rows.filter(r => r.c.q === 2).length;
-    body = `<div class="s-title">돌발 상황 후 가장 많이 미룬 업무</div><div class="s-sub">응답 ${d.length}명</div>
-      <div class="top3">${rows.map((r, i) => `<div class="it"><span class="rk">${i + 1}</span><span>${QUADS[r.c.q].dot} ${esc(r.c.title)}</span><span class="pc">${pct(r.n, d.length)}%</span></div>`).join('')}</div>
-      ${top2 ? say('급한 일이 생기면 가장 먼저 사라지는 게 <b>중요하지만 급하지 않은 일</b>입니다. 그중에서 무엇을 지키셨나요?') : say('왜 이 업무를 미루셨나요? 어떤 기준으로 판단하셨어요?')}`;
-  } else if (s === 3) {
-    const d = ps.filter(p => p.r3.defer);
-    const avg = (fn) => { const t = { 1: 0, 2: 0, 3: 0, 4: 0 }; for (const p of d) { const x = fn(p); for (const k in t) t[k] += x[k]; } for (const k in t) t[k] = d.length ? Math.round((t[k] / d.length) * 10) / 10 : 0; return t; };
-    const b = avg(p => quadTotals(p.r3.plan)), a = avg(p => quadTotals(p.r3.plan.filter(id => !p.r3.defer.includes(id)), true));
-    const qb = (t) => `<div class="qbar">${[1, 2, 3, 4].filter(k => t[k]).map(k => `<span class="${QUADS[k].cls}bg" style="width:${t[k] * 10}%">${QUADS[k].dot} ${t[k]}칸</span>`).join('')}</div>`;
-    body = `<div class="s-title">계획 vs 돌발 후 조정</div><div class="s-sub">응답 ${d.length}명 평균, 10칸의 사용처</div>
-      <div class="compare"><div class="row"><span>계획했을 때</span>${qb(b)}</div><div class="row"><span>돌발 후 조정</span>${qb(a)}</div></div>
-      <div class="legend" style="font-size:16px;margin-top:10px">${[1, 2, 3, 4].map(k => `<span>${QUADS[k].dot} ${QUADS[k].short}</span>`).join('')}</div>
-      ${say(`중요하지만 급하지 않은 일: 평균 <b>${b[2]}칸 → ${a[2]}칸</b>`)}
-      ${say('ROUND 1에서 미래준비성 업무를 \'여유 있을 때 하기\'로 고르신 분들, 이번 주에 그 여유가 있었나요?')}`;
-  } else if (s === 4) {
     body = `<div class="s-title">두 가지 판단 기준</div>
       <table class="tbl"><tr><td><b>긴급성</b></td><td>실제로 언제까지 완료해야 하는가?</td></tr><tr><td><b>중요도</b></td><td>완료하지 않으면 나와 동료, 조직에 어떤 영향이 있는가?</td></tr></table>
       <div style="height:16px"></div>
       <table class="tbl"><tr><th>사분면</th><th>처리 방법</th><th>김대리 예시</th></tr>
-      <tr><td>🔴 1. 중요·긴급</td><td><b>바로 처리한다</b></td><td>지표 보고, 정기 피싱 점검, 고객 문의, 돌발 대응</td></tr>
+      <tr><td>🔴 1. 중요·긴급</td><td><b>바로 처리한다</b></td><td>지표 보고, 정기 피싱 점검, 고객 문의</td></tr>
       <tr><td>🟢 2. 중요·덜 긴급</td><td><b>일정에 먼저 넣는다</b></td><td>개선 범위 확정, 응대 자료, 자동화 도구, 데이터 요청(마감 협의 후)</td></tr>
       <tr><td>🟡 3. 긴급·덜 중요</td><td><b>빠르게 처리하거나 줄인다</b></td><td>비품 신청 취합</td></tr>
       <tr><td>⚪ 4. 둘 다 아님</td><td><b>줄이거나 뺀다</b></td><td>폴더 정리</td></tr></table>
-      ${say("업무 유형은 <b>어떻게 처리할지</b>를, 사분면은 <b>무엇부터 할지</b>를 정합니다. '오늘 중으로'를 들으면 먼저 <b>실제 마감</b>을 물어보세요.")}`;
-  } else if (s === 5) {
+      ${say("업무 유형은 <b>어떻게 처리할지</b>를, 사분면은 <b>무엇부터 할지</b>를 정합니다. '오늘 중으로'를 들으면 먼저 <b>실제 마감</b>을 물어보세요.")}
+      ${say('지금 긴급 상황이 터져서 하나를 미뤄야 한다면, 어느 칸에서 빼시겠어요? → <b>2사분면을 미리 일정에 넣어 두지 않으면, 급한 일이 생길 때마다 가장 먼저 사라집니다.</b>')}`;
+  } else if (s === 3) {
     body = viewEndInner();
   }
   return sceneNav('r3', names) + body;
@@ -272,11 +240,11 @@ function exportCSV() {
   head.push('R1 유형점수', 'R1 전략점수');
   R2_PIECES.forEach((p, i) => head.push(`R2 배치-${i + 1} ${p.title}`));
   R2_REFINE.forEach(q => head.push(`R2 구체화 ${q.big}`));
-  head.push('R2 빠진작업 선택', 'R2 빠진작업 찾은 수', 'R3 계획', 'R3 미룬 업무');
+  head.push('R2 빠진작업 선택', 'R2 빠진작업 찾은 수');
+  R3_CARDS.forEach(c => head.push(`R3 ${c.title}`));
   const tl = (id) => TYPES.find(t => t.id === id)?.label || '';
   const sl = (id) => STRATEGIES.find(t => t.id === id)?.label || '';
   const gl = (id) => R2_GROUPS.find(t => t.id === id)?.label || '';
-  const ct = (id) => R3_CARDS.find(c => c.id === id)?.title || '';
   const rows = ps.map(p => {
     const r = [p.nick || ''];
     R1_CARDS.forEach(c => { const a = p.r1?.answers?.[c.id] || {}; r.push(tl(a.type), sl(a.strat)); });
@@ -284,7 +252,7 @@ function exportCSV() {
     R2_PIECES.forEach(x => r.push(gl(p.r2?.place?.[x.id])));
     R2_REFINE.forEach(q => r.push(q.options.find(o => o.id === p.r2?.refine?.[q.id])?.text || ''));
     r.push((p.r2?.missing || []).map(id => R2_MISSING.find(m => m.id === id)?.text).join(' / '), scoreR2(p.r2).found);
-    r.push((p.r3?.plan || []).map(ct).join(' / '), (p.r3?.defer || []).map(ct).join(' / '));
+    R3_CARDS.forEach(c => { const q = p.r3?.quad?.[c.id]; r.push(q ? `${q}사분면` : ''); });
     return r;
   });
   const csv = [head, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -344,12 +312,16 @@ async function act(a, v, el) {
     }
     case 'phase': {
       await store.setSession({ phase: v, updatedAt: Date.now() });
-      if (v.endsWith('_close')) { H.tab = 'r' + v[1]; H.scene['r' + v[1]] = 0; }
+      if (v.endsWith('_close')) { H.tab = 'r' + v[1]; H.scene['r' + v[1]] = 0; if (v === 'r1_close') { H.r1card = 0; H.r1open = false; } if (v === 'r3_close') { H.r3card = 0; H.r3open = false; } }
       else if (v === 'end') H.tab = 'end';
       else H.tab = 'live';
       break;
     }
     case 'tab': H.tab = v; break;
+    case 'r1card': H.r1card = +v; H.r1open = false; break;
+    case 'r1open': H.r1open = true; break;
+    case 'r3card': H.r3card = +v; H.r3open = false; break;
+    case 'r3open': H.r3open = true; break;
     case 'scene': H.scene[el.dataset.k] = +v; break;
     case 'flip': {
       H.flipped.has(v) ? H.flipped.delete(v) : H.flipped.add(v);
@@ -364,7 +336,7 @@ async function act(a, v, el) {
       H.resetArm = false;
       const runId = 'run-' + Date.now().toString(36);
       await store.setSession({ runId, phase: 'lobby', updatedAt: Date.now() });
-      H.tab = 'live'; H.flipped.clear(); H.scene = { r1: 0, r2: 0, r3: 0 };
+      H.tab = 'live'; H.flipped.clear(); H.scene = { r1: 0, r2: 0, r3: 0 }; H.r1card = 0; H.r1open = false; H.r3card = 0; H.r3open = false;
       break;
     }
   }
