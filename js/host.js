@@ -2,7 +2,7 @@ import { store } from './store.js';
 import { HOST_PIN, WIFI, COURSE_TITLE } from './config.js';
 import {
   PHASES, TYPES, STRATEGIES, R1_CARDS, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING,
-  R3_CARDS, QUADS, FINAL, scoreR1, scoreR2,
+  R3_CARDS, QUADS, QUAD_LAYOUT, FINAL, scoreR1, scoreR2,
 } from './content.js';
 
 const $ = document.getElementById('host');
@@ -104,7 +104,7 @@ function viewR1() {
     const a = ps.map(p => p.r1.answers[c.id]).filter(Boolean);
     const at = a.filter(x => x.type).length, as = a.filter(x => x.strat).length;
     const typeBars = TYPES.map(t => bar(t.label, a.filter(x => x.type === t.id).length, at, open && t.id === c.type[0] ? 'ok' : '')).join('');
-    const stratBars = STRATEGIES.map(st => bar(st.label, a.filter(x => x.strat === st.id).length, as, open && st.id === c.strat ? 'ok' : '')).join('');
+    const stratBars = STRATEGIES.map(st => bar(st.short, a.filter(x => x.strat === st.id).length, as, open && st.id === c.strat ? 'ok' : '')).join('');
     const ansType = TYPES.find(t => t.id === c.type[0]).label;
     const ansStrat = STRATEGIES.find(t => t.id === c.strat).label;
     body = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
@@ -130,7 +130,7 @@ function viewR1() {
       <table class="tbl"><tr><th>유형</th><th>전략</th><th>한 줄 설명</th></tr>
       ${STRATEGIES.filter(s => !s.trap).map(s => `<tr><td>${TYPES.find(t => t.id === s.type).label}</td><td><b>${s.label}</b></td><td>${s.desc}</td></tr>`).join('')}</table>
       ${say('보조업무는 묶어서 처리합니다. 단, <b>2분 안에 끝나는 일</b>과 <b>고객 피해가 걸린 긴급 건</b>은 바로 처리하세요.')}
-      <div class="say" style="font-size:28px;text-align:center;background:var(--navy);color:#fff;border:0">핵심은 집중하고, 보조는 묶고, 프로젝트는 쪼개고, 미래는 고정 시간을 확보한다.</div>`;
+      <div class="say" style="font-size:28px;text-align:center;background:var(--navy);color:#fff;border:0">핵심은 가장 좋은 시간에 먼저, 보조는 정해진 시간에 묶어서, 프로젝트는 쪼개서, 미래는 조금씩 꾸준히.</div>`;
   }
   return sceneNav('r1', names) + body;
 }
@@ -138,7 +138,7 @@ function viewR1() {
 // ---------------- ROUND 2 결과 ----------------
 function viewR2() {
   const ps = all().filter(p => p.r2);
-  const names = ['너무 큰 작업', '빠진 작업 찾기', '작업 배치 전체', 'WBS 원칙'];
+  const names = ['더 쪼개야 할 작업', '빠진 작업 찾기', '정답 구조도', 'WBS 원칙'];
   const s = H.scene.r2;
   let body = '';
   if (!ps.length && s < 3) body = `<div class="s-sub">아직 응답이 없습니다.</div>`;
@@ -160,10 +160,13 @@ function viewR2() {
         <div class="fr">${esc(m.text)}<small>${pct(a.filter(x => x.r2.missing.includes(m.id)).length, a.length)}%가 찾음</small></div><div class="bk">${esc(m.tag)}</div></div></div>`).join('')}</div>
       ${H.flipped.size >= 3 ? say('프로젝트를 계획할 때는 눈앞의 작업에 집중하다 보니, <b>다른 부서가 해야 할 일이나 출시 후 점검, 중간 확인 작업</b>을 놓칠 수 있습니다. 우리 회사에서도 비슷한 경험이 있으셨나요?') : ''}`;
   } else if (s === 2) {
-    body = `<div class="s-title">작업 배치 전체</div><div class="s-sub">초록색이 의도한 묶음</div><div class="grid-cards">` +
+    const tree = `<div class="anstree"><div class="ar">앱 개선 프로젝트</div><div class="ac">${R2_GROUPS.filter(g => g.id !== 'big').map(g => `<div><b>${g.label}</b>${R2_PIECES.filter(p => p.ans[0] === g.id).map(p => `<span>${esc(p.title)}${p.dept ? ` <em>${esc(p.dept)}</em>` : ''}</span>`).join('')}</div>`).join('')}</div>
+      <div class="abig"><b>✂️ 더 쪼개야 할 작업</b>${R2_PIECES.filter(p => p.ans[0] === 'big').map(p => `<span>${esc(p.title)}</span>`).join('')}</div></div>`;
+    body = `<div class="s-title">정답 구조도</div><div class="s-sub">아래는 작업별로 교육생이 넣은 묶음 비율 (초록색 = 정답)</div>${tree}
+      <div class="grid-cards" style="margin-top:20px">` +
       R2_PIECES.map(p => {
         const a = ps.filter(x => x.r2.place?.[p.id]);
-        return `<div class="mini"><h4>${esc(p.title)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ''}${p.debate ? ' ⚡' : ''}${p.trap ? ' 🪤' : ''}</h4>
+        return `<div class="mini"><h4>${esc(p.title)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ''}</h4>
           ${R2_GROUPS.map(g => bar(g.label, a.filter(x => x.r2.place[p.id] === g.id).length, a.length, p.ans.includes(g.id) ? 'ok' : '')).join('')}</div>`;
       }).join('') + `</div>`;
   } else if (s === 3) {
@@ -180,14 +183,13 @@ function viewR2() {
 }
 
 // ---------------- ROUND 3 결과 ----------------
-function hostMatrix(cellFn) {
-  const q = (n) => `<div class="quad ${QUADS[n].cls}"><h4>${n}. ${QUADS[n].label}</h4>${cellFn(n)}</div>`;
-  return `<div class="matrix"><div></div><div class="ax">급하다</div><div class="ax">덜 급하다</div>
-    <div class="ax v">중요하다</div>${q(1)}${q(2)}<div class="ax v">덜 중요하다</div>${q(3)}${q(4)}</div>`;
+function hostMatrix(cellFn, showAction) {
+  const q = (n) => `<div class="quad ${QUADS[n].cls}"><h4>${QUADS[n].label}${showAction ? ` <span class="act">${QUADS[n].action}</span>` : ''}</h4>${cellFn(n)}</div>`;
+  return `<div class="matrix2"><div class="ay">중요도 ▲</div><div class="mg">${QUAD_LAYOUT.map(q).join('')}</div><div></div><div class="ax2">긴급성 ▶</div></div>`;
 }
 function viewR3() {
   const ps = all().filter(p => p.r3?.quad);
-  const names = ['카드별 정답 공개', '우리 반 vs 정답', '판단 기준과 처리 방법', '전체 마무리'];
+  const names = ['카드별 정답 공개', '우리 반 vs 정답', '아이젠하워 매트릭스', '판단 기준과 처리 방법', '전체 마무리'];
   const s = H.scene.r3;
   let body = '';
   const dist = (c) => { const a = ps.map(p => p.r3.quad[c.id]).filter(Boolean); return { a, n: a.length }; };
@@ -197,9 +199,9 @@ function viewR3() {
     body = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         ${R3_CARDS.map((x, k) => `<button class="h-btn sm" style="${k === i ? 'background:var(--navy);color:#fff' : 'background:#eef1f5'}" data-act="r3card" data-v="${k}">${k + 1}</button>`).join('')}
         <span style="color:var(--muted);margin-left:8px">응답 ${n}명</span></div>
-      <div class="s-title">${i + 1}. ${esc(c.title)}</div><div class="s-sub">⏰ 마감: ${esc(c.due)} · ⚠️ 안 하면: ${esc(c.risk)}</div>
-      ${hostMatrix(q => `<div class="bigpct ${open && q === c.q ? 'hit' : ''}">${pct(a.filter(x => x === q).length, n)}%</div>`)}
-      ${open ? `<div class="answer"><div class="ans-h"><span>정답</span><b>${QUADS[c.q].dot} ${c.q}사분면 · ${QUADS[c.q].label}</b><i>→</i><b>${QUADS[c.q].how}</b></div><p>${esc(c.reason)}</p></div>`
+      <div class="s-title">${i + 1}. ${esc(c.title)}</div><div class="s-sub">⏰ 마감: ${esc(c.due)} · ⚠️ 안 하면: ${esc(c.risk)} · 👥 ${esc(c.who)}</div>
+      ${hostMatrix(q => `<div class="bigpct ${open && q === c.q ? 'hit' : ''}">${pct(a.filter(x => x === q).length, n)}%</div>`, open)}
+      ${open ? `<div class="answer"><div class="ans-h"><span>정답</span><b>${QUADS[c.q].dot} ${QUADS[c.q].label}</b><i>→</i><b>${QUADS[c.q].action}</b></div><p>${esc(c.reason)}</p></div>`
         : `<div style="text-align:center;margin-top:20px"><button class="btn" style="max-width:360px;margin:0 auto;font-size:22px" data-act="r3open">정답 공개</button></div>`}
       <div style="display:flex;justify-content:space-between;margin-top:20px">
         <button class="h-btn" style="background:#eef1f5" data-act="r3card" data-v="${Math.max(0, i - 1)}" ${i === 0 ? 'disabled' : ''}>◀ 이전 카드</button>
@@ -209,19 +211,19 @@ function viewR3() {
     const chips = (map, mark) => (q) => R3_CARDS.filter(c => map[c.id] === q).map(c => `<div class="chip ${mark && c.q !== q ? 'hl' : ''}"><span>${esc(c.title)}</span></div>`).join('');
     body = `<div class="s-title">우리 반 매트릭스 vs 정답 매트릭스</div><div class="s-sub">우리 반 = 가장 많은 분이 넣은 칸 (응답 ${ps.length}명) · 주황 테두리 = 정답과 다른 카드</div>
       <div class="grid-cards"><div><h3 style="margin:0 0 8px">우리 반</h3>${hostMatrix(chips(major, true))}</div>
-      <div><h3 style="margin:0 0 8px">정답</h3>${hostMatrix(chips(Object.fromEntries(R3_CARDS.map(c => [c.id, c.q]))))}</div></div>`;
+      <div><h3 style="margin:0 0 8px">정답</h3>${hostMatrix(chips(Object.fromEntries(R3_CARDS.map(c => [c.id, c.q]))), true)}</div></div>`;
   } else if (s === 2) {
-    body = `<div class="s-title">두 가지 판단 기준</div>
-      <table class="tbl"><tr><td><b>긴급성</b></td><td>실제로 언제까지 완료해야 하는가?</td></tr><tr><td><b>중요도</b></td><td>완료하지 않으면 나와 동료, 조직에 어떤 영향이 있는가?</td></tr></table>
-      <div style="height:16px"></div>
-      <table class="tbl"><tr><th>사분면</th><th>처리 방법</th><th>김대리 예시</th></tr>
-      <tr><td>🔴 1. 중요·긴급</td><td><b>바로 처리한다</b></td><td>지표 보고, 정기 피싱 점검, 고객 문의</td></tr>
-      <tr><td>🟢 2. 중요·덜 긴급</td><td><b>일정에 먼저 넣는다</b></td><td>개선 범위 확정, 응대 자료, 자동화 도구, 데이터 요청(마감 협의 후)</td></tr>
-      <tr><td>🟡 3. 긴급·덜 중요</td><td><b>빠르게 처리하거나 줄인다</b></td><td>비품 신청 취합</td></tr>
-      <tr><td>⚪ 4. 둘 다 아님</td><td><b>줄이거나 뺀다</b></td><td>폴더 정리</td></tr></table>
-      ${say("업무 유형은 <b>어떻게 처리할지</b>를, 사분면은 <b>무엇부터 할지</b>를 정합니다. '오늘 중으로'를 들으면 먼저 <b>실제 마감</b>을 물어보세요.")}
-      ${say('지금 긴급 상황이 터져서 하나를 미뤄야 한다면, 어느 칸에서 빼시겠어요? → <b>2사분면을 미리 일정에 넣어 두지 않으면, 급한 일이 생길 때마다 가장 먼저 사라집니다.</b>')}`;
+    body = `<div class="s-title">아이젠하워 매트릭스</div><div class="s-sub">중요도 × 긴급성으로 업무를 나누고, 칸마다 처리 방법을 정합니다</div>
+      ${hostMatrix(q => `<div class="model"><b>${QUADS[q].action}</b><span>${QUADS[q].how}</span></div>`)}`;
   } else if (s === 3) {
+    body = `<div class="s-title">세 가지 판단 기준</div>
+      <table class="tbl"><tr><td><b>⏰ 긴급성</b></td><td>이번 주 안에 끝내야 하는가?</td></tr><tr><td><b>⚠️ 중요도</b></td><td>안 하면 평가·서비스·고객에 큰 영향이 있는가?</td></tr><tr><td><b>👥 담당</b></td><td>내가 꼭 해야 하는가? 다른 사람이 해도 되는 일인가?</td></tr></table>
+      <div style="height:16px"></div>
+      <table class="tbl"><tr><th>칸</th><th>처리 방법</th><th>김대리 예시</th></tr>
+      ${[1, 2, 3, 4].map(q => `<tr><td>${QUADS[q].dot} ${QUADS[q].label} · <b>${QUADS[q].action}</b></td><td><b>${QUADS[q].how}</b></td><td>${R3_CARDS.filter(c => c.q === q).map(c => esc(c.title.replace(/^.+?: /, ''))).join(', ')}</td></tr>`).join('')}</table>
+      ${say('업무 유형은 <b>어떻게 처리할지</b>를, 매트릭스는 <b>무엇부터 할지</b>를 정합니다. 프로젝트성 업무는 급하지 않을 때 <b>미리 일정에 넣어야</b> 합니다.')}
+      ${say('지금 긴급 상황이 터져서 하나를 미뤄야 한다면, 어느 칸에서 빼시겠어요? → <b>일정 계획 칸을 미리 잡아 두지 않으면, 급한 일이 생길 때마다 가장 먼저 사라집니다.</b>')}`;
+  } else if (s === 4) {
     body = viewEndInner();
   }
   return sceneNav('r3', names) + body;

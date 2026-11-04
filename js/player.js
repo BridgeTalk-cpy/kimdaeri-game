@@ -1,7 +1,7 @@
 import { store, saveWithRetry, onNet, safeLS } from './store.js';
 import {
   KIM, TYPES, STRATEGIES, R1_CARDS, R2_MISSION, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING,
-  R3_INTRO, R3_CARDS, QUADS, FINAL,
+  R3_INTRO, R3_CARDS, QUADS, QUAD_LAYOUT, FINAL,
   scoreR1, scoreR2, scoreR3,
 } from './content.js';
 
@@ -205,10 +205,9 @@ function matrixHTML(quad, opts = {}) {
       ? `<button class="chip-btn in ${S.ui.r3.sel === c.id ? 'picked' : ''}" data-act="r3unplace" data-v="${c.id}">${esc(c.title)}</button>`
       : `<span class="mchip ${opts.marks && opts.marks[c.id] === false ? 'wrong' : ''}">${esc(c.title)}</span>`).join('');
     return `<div class="mq ${QUADS[q].cls} ${opts.board && S.ui.r3.sel ? 'ready' : ''}" ${opts.board ? `data-act="r3drop" data-v="${q}"` : ''}>
-      <div class="mql">${q}</div>${inner || (opts.board && S.ui.r3.sel ? '<span class="ph-in">여기에 넣기</span>' : '')}</div>`;
+      <div class="mql">${QUADS[q].label}${opts.answer ? `<b>${QUADS[q].action}</b>` : ''}</div>${inner || (opts.board && S.ui.r3.sel ? '<span class="ph-in">여기에 넣기</span>' : '')}</div>`;
   };
-  return `<div class="mtx ${opts.small ? 'small' : ''}"><div></div><div class="mx">급하다</div><div class="mx">덜 급하다</div>
-    <div class="my">중요하다</div>${cell(1)}${cell(2)}<div class="my">덜 중요하다</div>${cell(3)}${cell(4)}</div>`;
+  return `<div class="mtx2 ${opts.small ? 'small' : ''}"><div class="ay">중요도 ▲</div><div class="mgrid">${QUAD_LAYOUT.map(cell).join('')}</div><div></div><div class="ax2">긴급성 ▶</div></div>`;
 }
 
 function viewR3() {
@@ -219,7 +218,7 @@ function viewR3() {
     return top('ROUND 3 · 순서 정하기') + `<h1 class="p-title">김대리의 이번 주, 무엇부터?</h1>
       <div class="box"><p>월요일 아침, 김대리의 이번 주 업무가 쌓여 있습니다.</p>
       <div class="crit"><b>김대리의 평가 기준</b><br>${esc(R3_INTRO.criteria)}</div></div>
-      <div class="box"><h3>두 가지 질문으로 판단하세요</h3><p>⏰ <b>${esc(R3_INTRO.urgent)}</b></p><p style="margin:0">⚠️ <b>${esc(R3_INTRO.important)}</b></p></div>
+      <div class="box"><h3>세 가지 질문으로 판단하세요</h3><p>⏰ <b>${esc(R3_INTRO.urgent)}</b></p><p>⚠️ <b>${esc(R3_INTRO.important)}</b></p><p style="margin:0">👥 <b>${esc(R3_INTRO.who)}</b></p></div>
       <div class="mission"><b>MISSION</b><br>김대리의 업무 9가지를 아이젠하워 매트릭스의 알맞은 칸에 넣어 주세요.</div>` +
       sticky(`<button class="btn" data-act="r3start">시작하기</button>`);
   }
@@ -228,10 +227,11 @@ function viewR3() {
   const pool = seededShuffle(R3_CARDS, hash((S.pid || 'x') + 'r3')).filter(c => !quad[c.id]);
   return top('ROUND 3 · 매트릭스에 넣기') +
     `<p class="p-sub" style="margin:0 0 10px">① 아래 업무 카드를 누르고 ② 넣을 칸을 누르세요. 넣은 카드를 다시 누르면 빠집니다.</p>
+    <div class="crit3">⏰ 급한가? 이번 주 안 · ⚠️ 중요한가? 큰 영향 · 👥 내가 꼭 해야 하나?</div>
     <div class="wtree">${matrixHTML(quad, { board: true })}</div>
     <div class="pool-h">아직 넣지 않은 업무 ${pool.length}개</div>
     ${pool.map(c => `<button class="r3row ${ui.sel === c.id ? 'picked' : ''}" data-act="r3pick" data-v="${c.id}">
-      <div class="bd"><b>${esc(c.title)}</b><span>⏰ 마감: ${esc(c.due)}</span><span>⚠️ 안 하면: ${esc(c.risk)}</span></div></button>`).join('') || '<p class="note">모든 업무를 넣었어요!</p>'}` +
+      <div class="bd"><b>${esc(c.title)}</b><span>⏰ 마감: ${esc(c.due)}</span><span>⚠️ 안 하면: ${esc(c.risk)}</span><span>👥 누가: ${esc(c.who)}</span></div></button>`).join('') || '<p class="note">모든 업무를 넣었어요!</p>'}` +
     sticky(`<button class="btn" data-act="r3done" ${pool.length ? 'disabled' : ''}>${pool.length ? `업무를 모두 넣어 주세요 (${R3_CARDS.length - pool.length}/${R3_CARDS.length})` : '제출하기'}</button>`);
 }
 
@@ -245,15 +245,39 @@ function viewR3Result(waiting) {
   return top('ROUND 3 · 결과') + `<h1 class="p-title">내 매트릭스 vs 정답</h1>
     <div class="score" style="grid-template-columns:1fr"><div><b>${sc.ok} / ${sc.total}</b><span>정답과 같은 칸에 넣은 업무</span></div></div>
     <div class="box"><h3>내 매트릭스</h3>${matrixHTML(quad, { small: true, marks })}<p class="note">빨간 테두리 = 정답과 다른 칸</p></div>
-    <div class="box"><h3>정답 매트릭스</h3>${matrixHTML(answer, { small: true })}</div>
-    ${wrong.length ? `<div class="box"><h3>다르게 넣은 업무</h3>${wrong.map(c => `<div class="fb"><b>${esc(c.title)}</b> → 정답 ${QUADS[c.q].dot} ${c.q}사분면<br>${esc(c.reason)}</div>`).join('')}</div>` : ''}` +
+    <div class="box"><h3>정답 매트릭스</h3>${matrixHTML(answer, { small: true, answer: true })}</div>
+    ${wrong.length ? `<div class="box"><h3>다르게 넣은 업무</h3>${wrong.map(c => `<div class="fb"><b>${esc(c.title)}</b> → 정답 ${QUADS[c.q].dot} ${QUADS[c.q].label} · <b>${QUADS[c.q].action}</b><br>${esc(c.reason)}</div>`).join('')}</div>` : ''}` +
     (waiting ? waitBox('👀', '다른 분들을 기다리는 중<span class="dots"></span>', '모두 끝나면 강사님이 결과를 공개합니다.') : '');
 }
 
 // ---------------- 마감/마무리 ----------------
+function myR1Answers() {
+  const ans = S.me?.r1?.answers || {};
+  const tl = (id) => TYPES.find(t => t.id === id)?.label || '-';
+  const sl = (id) => STRATEGIES.find(t => t.id === id)?.short || '-';
+  return `<div class="box"><h3>내 답 vs 정답</h3>` + R1_CARDS.map((c, i) => {
+    const a = ans[c.id] || {};
+    const okT = c.type.includes(a.type), okS = a.strat === c.strat;
+    return `<div class="myans"><div class="mt">${i + 1}. ${esc(c.title)}</div>
+      <div class="mr"><span class="${okT ? 'ok' : 'ng'}">${okT ? '✅' : '❌'} ${esc(tl(a.type))}</span><span class="ans">정답 ${esc(tl(c.type[0]))}</span></div>
+      <div class="mr"><span class="${okS ? 'ok' : 'ng'}">${okS ? '✅' : '❌'} ${esc(sl(a.strat))}</span><span class="ans">정답 ${esc(sl(c.strat))}</span></div></div>`;
+  }).join('') + `</div>`;
+}
+function myR2Answers() {
+  const r2 = S.me?.r2 || {}; const place = r2.place || {};
+  const groups = R2_GROUPS;
+  const tree = (map, mark) => `<div class="tcols four">${groups.map(g => `<div class="tcol"><b>${g.id === 'big' ? '✂️ ' : ''}${g.label}</b>${R2_PIECES.filter(p => map(p) === g.id).map(p => `<span class="${mark && !p.ans.includes(place[p.id]) ? 'ng' : ''}">${esc(p.title)}</span>`).join('')}</div>`).join('')}</div>`;
+  const miss = r2.missing || [];
+  return `<div class="box"><h3>내가 만든 구조도</h3>${tree(p => place[p.id], true)}<p class="note">빨간 테두리 = 정답과 다른 곳</p></div>
+    <div class="box"><h3>정답 구조도</h3>${tree(p => p.ans[0], false)}</div>
+    <div class="box"><h3>빠진 작업 정답</h3>${R2_MISSING.map(m => `<div class="myans"><div class="mr"><span class="${m.correct === miss.includes(m.id) ? 'ok' : 'ng'}">${m.correct === miss.includes(m.id) ? '✅' : '❌'} ${esc(m.text)}</span><span class="ans">${m.correct ? '빠진 작업 · ' + esc(m.tag) : esc(m.tag)}</span></div></div>`).join('')}</div>`;
+}
 function viewClosed(n) {
-  const done = S.me?.[`r${n}`]?.done;
-  const res = n === 1 ? viewR1Result(false) : n === 2 ? viewR2Result(false) : viewR3Result(false);
+  const done = S.me?.[`r${n}`];
+  let res = '';
+  if (n === 1) res = viewR1Result(false) + myR1Answers();
+  else if (n === 2) res = viewR2Result(false) + myR2Answers();
+  else res = viewR3Result(false);
   return waitBox('🎤', `ROUND ${n} 마감`, '이제 화면을 보며 강사님 설명을 들어 주세요.') + (done ? res : `<p class="p-sub" style="text-align:center">이번 라운드는 마감되었어요.</p>`);
 }
 function viewEnd() {
