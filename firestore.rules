@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 진행 상태 (강사 화면이 변경, 모두 읽기)
+    match /sessions/{sid} {
+      allow read: if true;
+      allow write: if sid == 'main'
+        && request.time < timestamp.date(2027, 3, 1)
+        && request.resource.data.keys().hasOnly(['runId', 'phase', 'updatedAt']);
+    }
+
+    // 참가자 응답
+    match /runs/{runId}/players/{pid} {
+      allow read: if true;
+      allow create, update: if request.time < timestamp.date(2027, 3, 1)
+        && request.resource.data.keys().hasOnly(['nick', 'joinedAt', 'updatedAt', 'r1', 'r2', 'r3'])
+        && (!('nick' in request.resource.data) || (request.resource.data.nick is string && request.resource.data.nick.size() <= 12));
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
