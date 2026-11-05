@@ -1,7 +1,7 @@
 import { store } from './store.js';
 import { HOST_PIN, WIFI, COURSE_TITLE } from './config.js';
 import {
-  PHASES, TYPES, STRATEGIES, R1_CARDS, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING,
+  PHASES, TYPES, STRATEGIES, R1_CARDS, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING, R2_ANSWER_TREE, CIRC,
   R3_CARDS, QUADS, QUAD_LAYOUT, FINAL, scoreR1, scoreR2,
 } from './content.js';
 
@@ -41,7 +41,7 @@ function makeFake(n = 70) {
       else place[p.id] = r() < 0.8 ? p.ans[0] : R2_GROUPS[Math.floor(r() * 4)].id;
     }
     const refine = {};
-    for (const q of R2_REFINE) { const c = q.options.find(o => o.correct).id; refine[q.id] = r() < 0.55 ? c : q.options[Math.floor(r() * 4)].id; }
+    for (const q of R2_REFINE) { const c = q.options.find(o => o.correct).id; refine[q.id] = r() < 0.55 ? c : q.options[Math.floor(r() * 4)].id; refine[q.id + '_g'] = r() < 0.7 ? q.group : ['plan', 'dev', 'launch'][Math.floor(r() * 3)]; }
     const mp = { m1: 0.45, m2: 0.35, m3: 0.3, m4: 0.1, m5: 0.25 };
     const missing = Object.keys(mp).filter(id => r() < mp[id]);
     if (!missing.length) missing.push('m1');
@@ -148,7 +148,12 @@ function viewR2() {
       <div class="bars">${traps.map(p => { const a = ps.filter(x => x.r2.place?.[p.id]); return bar(esc(p.title), a.filter(x => x.r2.place[p.id] === 'big').length, a.length, 'trap'); }).join('')}</div>
       <div class="grid-cards" style="margin-top:20px">${R2_REFINE.map(q => {
         const a = ps.filter(x => x.r2.refine?.[q.id]);
-        return `<div class="mini"><h4>STEP 2 · ${esc(q.big)}</h4>${q.options.map(o => bar(esc(o.text), a.filter(x => x.r2.refine[q.id] === o.id).length, a.length, o.correct ? 'ok' : '')).join('')}</div>`;
+        const ag = ps.filter(x => x.r2.refine?.[q.id + '_g']);
+        return `<div class="mini"><h4>STEP 2 · ${esc(q.big)}</h4>
+          <div style="font-size:13px;font-weight:700;color:var(--muted);margin:2px 0 4px">Q1. 어디에 들어갈까?</div>
+          ${R2_GROUPS.filter(g => g.id !== 'big').map(g => bar(g.label + ' 아래', ag.filter(x => x.r2.refine[q.id + '_g'] === g.id).length, ag.length, g.id === q.group ? 'ok' : '')).join('')}
+          <div style="font-size:13px;font-weight:700;color:var(--muted);margin:10px 0 4px">Q2. 쪼갠다면?</div>
+          ${q.options.map(o => bar(esc(o.text), a.filter(x => x.r2.refine[q.id] === o.id).length, a.length, o.correct ? 'ok' : '')).join('')}</div>`;
       }).join('')}</div>
       ${say("'앱 완성도 높이기'에 담당자와 마감일은 적을 수 있습니다. 그런데 <b>무엇이 끝나면 이 일을 끝냈다고 할 수 있을까요?</b>")}`;
   } else if (s === 1) {
@@ -160,8 +165,8 @@ function viewR2() {
         <div class="fr">${esc(m.text)}<small>${pct(a.filter(x => x.r2.missing.includes(m.id)).length, a.length)}%가 찾음</small></div><div class="bk">${esc(m.tag)}</div></div></div>`).join('')}</div>
       ${H.flipped.size >= 3 ? say('프로젝트를 계획할 때는 눈앞의 작업에 집중하다 보니, <b>다른 부서가 해야 할 일이나 출시 후 점검, 중간 확인 작업</b>을 놓칠 수 있습니다. 우리 회사에서도 비슷한 경험이 있으셨나요?') : ''}`;
   } else if (s === 2) {
-    const tree = `<div class="anstree"><div class="ar">앱 개선 프로젝트</div><div class="ac">${R2_GROUPS.filter(g => g.id !== 'big').map(g => `<div><b>${g.label}</b>${R2_PIECES.filter(p => p.ans[0] === g.id).map(p => `<span>${esc(p.title)}${p.dept ? ` <em>${esc(p.dept)}</em>` : ''}</span>`).join('')}</div>`).join('')}</div>
-      <div class="abig"><b>✂️ 더 쪼개야 할 작업</b>${R2_PIECES.filter(p => p.ans[0] === 'big').map(p => `<span>${esc(p.title)}</span>`).join('')}</div></div>`;
+    const tree = `<div class="anstree"><div class="ar">앱 개선 프로젝트</div><div class="ac">${R2_ANSWER_TREE.map(col => `<div><b>${R2_GROUPS.find(g => g.id === col.g).label}</b>${col.items.map((it, i) => `<span class="${it.miss ? 'miss' : ''}">${CIRC[i]} ${esc(it.t)}${it.big ? ' ✂️' : ''}${it.dept ? ` <em>${esc(it.dept)}</em>` : ''}${it.child ? `<small>└ ${esc(it.child)}</small>` : ''}</span>`).join('')}</div>`).join('')}</div>
+      <div class="legend" style="font-size:14px;margin-top:10px"><span>주황 = 게임에서 찾은 빠진 작업</span><span>✂️ = 더 쪼갠 작업</span></div></div>`;
     body = `<div class="s-title">정답 구조도</div><div class="s-sub">아래는 작업별로 교육생이 넣은 묶음 비율 (초록색 = 정답)</div>${tree}
       <div class="grid-cards" style="margin-top:20px">` +
       R2_PIECES.map(p => {
@@ -241,7 +246,7 @@ function exportCSV() {
   R1_CARDS.forEach((c, i) => head.push(`R1-${i + 1} 유형`, `R1-${i + 1} 전략`));
   head.push('R1 유형점수', 'R1 전략점수');
   R2_PIECES.forEach((p, i) => head.push(`R2 배치-${i + 1} ${p.title}`));
-  R2_REFINE.forEach(q => head.push(`R2 구체화 ${q.big}`));
+  R2_REFINE.forEach(q => head.push(`R2 ${q.big} 위치`, `R2 ${q.big} 쪼갠 작업`));
   head.push('R2 빠진작업 선택', 'R2 빠진작업 찾은 수');
   R3_CARDS.forEach(c => head.push(`R3 ${c.title}`));
   const tl = (id) => TYPES.find(t => t.id === id)?.label || '';
@@ -252,7 +257,7 @@ function exportCSV() {
     R1_CARDS.forEach(c => { const a = p.r1?.answers?.[c.id] || {}; r.push(tl(a.type), sl(a.strat)); });
     const s1 = scoreR1(p.r1); r.push(s1.type, s1.strat);
     R2_PIECES.forEach(x => r.push(gl(p.r2?.place?.[x.id])));
-    R2_REFINE.forEach(q => r.push(q.options.find(o => o.id === p.r2?.refine?.[q.id])?.text || ''));
+    R2_REFINE.forEach(q => r.push(gl(p.r2?.refine?.[q.id + '_g']), q.options.find(o => o.id === p.r2?.refine?.[q.id])?.text || ''));
     r.push((p.r2?.missing || []).map(id => R2_MISSING.find(m => m.id === id)?.text).join(' / '), scoreR2(p.r2).found);
     R3_CARDS.forEach(c => { const q = p.r3?.quad?.[c.id]; r.push(q ? `${q}사분면` : ''); });
     return r;

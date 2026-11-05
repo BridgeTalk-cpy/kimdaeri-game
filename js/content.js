@@ -30,10 +30,10 @@ export const TYPES = [
 ];
 
 export const STRATEGIES = [
-  { id: 'focus', label: '가장 좋은 시간에 먼저 하기 (고정 시간 확보)', short: '가장 좋은 시간에 먼저 하기', desc: '하루 중 집중이 가장 잘 되는 시간을 고정해 두고, 핵심업무를 그 시간에 먼저 한다', type: 'core' },
-  { id: 'batch', label: '정해진 시간에 묶어서 하기', short: '정해진 시간에 묶어서 하기', desc: '반복되는 일은 정해진 시간에 한꺼번에 처리한다', type: 'support' },
-  { id: 'split', label: '쪼개서 관리하기', short: '쪼개서 관리하기', desc: '큰 일은 작은 단계로 나누고 중간 점검한다', type: 'project' },
-  { id: 'fixed', label: '조금씩 꾸준히 투자하기', short: '조금씩 꾸준히 투자하기', desc: '급하지 않아도 매주 일정 시간을 떼어 꾸준히 한다', type: 'future' },
+  { id: 'focus', label: '가장 좋은 시간에 먼저 하기 (고정 시간 확보)', short: '가장 좋은 시간에 먼저 하기', desc: '생각과 판단이 필요한 반복 업무는 집중이 가장 잘 되는 시간을 고정해 먼저 한다', type: 'core' },
+  { id: 'batch', label: '정해진 시간에 묶어서 하기', short: '정해진 시간에 묶어서 하기', desc: '업무 흐름을 위한 단순 반복 업무는 정해진 시간에 모아서 한꺼번에 처리한다', type: 'support' },
+  { id: 'split', label: '쪼개서 관리하기', short: '쪼개서 관리하기', desc: '마감일이 정해진 큰 일은 마감에 맞춰 단계로 쪼개고 중간 점검한다', type: 'project' },
+  { id: 'fixed', label: '조금씩 꾸준히 투자하기', short: '조금씩 꾸준히 투자하기', desc: '당장 급하지 않은 투자성 일은 매주 일정 시간을 떼어 꾸준히 한다', type: 'future' },
   { id: 'gap',   label: '틈틈이 하기', short: '틈틈이 하기', desc: '다른 일 사이사이, 짬이 날 때마다 조금씩 한다', trap: true },
   { id: 'spare', label: '여유 있을 때 하기', short: '여유 있을 때 하기', desc: '급한 일을 먼저 끝내고 남는 시간에 한다', trap: true },
 ];
@@ -67,7 +67,7 @@ export const R2_PIECES = [
   { id: 'p1',  title: '고객 불편사항 분석', ans: ['plan'] },
   { id: 'p2',  title: '개선 범위 확정', ans: ['plan'] },
   { id: 'p3',  title: '화면 설계안 작성', ans: ['plan'] },
-  { id: 'p4',  title: '테스트 시나리오 작성', ans: ['dev', 'plan'], debate: true },
+  { id: 'p4',  title: '테스트 시나리오 작성', ans: ['dev'] },
   { id: 'p5',  title: '기능 개발 요청 및 개발 일정 협의', ans: ['dev'] },
   { id: 'p6',  title: '기능 개발', dept: '개발팀', ans: ['dev'] },
   { id: 'p7',  title: '오류 테스트', ans: ['dev'] },
@@ -79,16 +79,18 @@ export const R2_PIECES = [
 
 export const R2_REFINE = [
   {
-    id: 'q1', big: '앱 완성도 높이기',
+    id: 'q1', big: '앱 완성도 높이기', group: 'dev',
+    child: '주요 화면 5개 사용성 테스트 진행하기',
     options: [
       { id: 'a', text: '앱 사용성 개선하기' },
-      { id: 'b', text: '사용자 불편사항 TOP5 개선안 작성하기', correct: true },
+      { id: 'b', text: '주요 화면 5개 사용성 테스트 진행하기', correct: true },
       { id: 'c', text: '앱 전반 품질 점검하기' },
       { id: 'd', text: '디자인 개선 방향 논의하기' },
     ],
   },
   {
-    id: 'q2', big: '출시 준비 마무리하기',
+    id: 'q2', big: '출시 준비 마무리하기', group: 'launch',
+    child: '출시 전 점검표 10개 항목 최종 확인하기',
     options: [
       { id: 'a', text: '출시 관련 업무 정리하기' },
       { id: 'b', text: '출시 준비 상황 공유하기' },
@@ -97,6 +99,20 @@ export const R2_REFINE = [
     ],
   },
 ];
+
+// 정답 구조도 (빠진 작업 ★, 더 쪼갠 작업 ✂️ 포함)
+export const R2_ANSWER_TREE = [
+  { g: 'plan', items: [{ t: '고객 불편사항 분석' }, { t: '개선 범위 확정' }, { t: '화면 설계안 작성' }] },
+  { g: 'dev', items: [{ t: '테스트 시나리오 작성' }, { t: '기능 개발 요청 및 개발 일정 협의' }, { t: '기능 개발', dept: '개발팀' }, { t: '오류 테스트' }, { t: '오류 수정 결과 재검증', miss: true }, { t: '앱 완성도 높이기', big: true, child: '주요 화면 5개 사용성 테스트 진행하기' }] },
+  { g: 'launch', items: [{ t: '고객 안내문 작성', dept: '마케팅팀' }, { t: '앱스토어 업데이트 등록' }, { t: '출시 준비 마무리하기', big: true, child: '출시 전 점검표 10개 항목 최종 확인하기' }, { t: '고객센터 응대 자료 준비', miss: true }, { t: '출시 후 초기 고객 반응 점검', miss: true }] },
+];
+
+// 칸 안 정렬: 그 칸의 정답 카드를 정해진 순서대로, 틀린 카드는 맨 뒤
+export function sortedIn(groupId, place) {
+  const inG = R2_PIECES.filter(p => place[p.id] === groupId);
+  return [...inG.filter(p => p.ans.includes(groupId)), ...inG.filter(p => !p.ans.includes(groupId))];
+}
+export const CIRC = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪'];
 
 export const R2_MISSING = [
   { id: 'm1', text: '고객센터 응대 자료 준비', correct: true, tag: '🏢 다른 부서의 일' },
@@ -176,13 +192,14 @@ export function scoreR2(r2) {
   const refine = r2.refine || {};
   let s2 = 0;
   for (const q of R2_REFINE) {
+    if (refine[q.id + '_g'] === q.group) s2++;
     const o = q.options.find(o => o.id === refine[q.id]);
     if (o && o.correct) s2++;
   }
   const miss = r2.missing || [];
   const found = R2_MISSING.filter(m => m.correct && miss.includes(m.id)).length;
   const wrong = R2_MISSING.filter(m => !m.correct && miss.includes(m.id)).length;
-  return { s1, t1: R2_PIECES.length, s2, t2: R2_REFINE.length, found, t3: R2_MISSING.filter(m => m.correct).length, wrong };
+  return { s1, t1: R2_PIECES.length, s2, t2: R2_REFINE.length * 2, found, t3: R2_MISSING.filter(m => m.correct).length, wrong };
 }
 
 

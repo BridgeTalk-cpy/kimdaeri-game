@@ -257,3 +257,12 @@ input.txt:focus{outline:none;border-color:var(--navy)}
 .anstree .abig{margin-top:12px;background:#fff7ef;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .anstree .abig b{margin:0 10px 0 0}
 .anstree .abig span{margin:0}
+
+.hint{font-size:13px;font-weight:700;color:var(--accent);margin:0 0 10px}
+.chip-btn .num{font-style:normal;font-weight:800;color:var(--navy);margin-right:3px}
+.tcol span.miss{background:#fff3e6;outline:1.5px solid var(--accent)}
+.tcol span.bigit{font-weight:700}
+.tcol span small{display:block;font-size:11px;color:var(--navy);margin-top:2px;font-weight:600}
+
+.anstree span.miss{background:#fff3e6;outline:2px solid var(--accent)}
+.anstree span small{display:block;font-size:14px;color:var(--navy);margin:4px 0 0 10px}

@@ -1,6 +1,6 @@
 import { store, saveWithRetry, onNet, safeLS } from './store.js';
 import {
-  KIM, TYPES, STRATEGIES, R1_CARDS, R2_MISSION, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING,
+  KIM, TYPES, STRATEGIES, R1_CARDS, R2_MISSION, R2_GROUPS, R2_PIECES, R2_REFINE, R2_MISSING, R2_ANSWER_TREE, sortedIn, CIRC,
   R3_INTRO, R3_CARDS, QUADS, QUAD_LAYOUT, FINAL,
   scoreR1, scoreR2, scoreR3,
 } from './content.js';
@@ -19,7 +19,7 @@ const S = {
   runId: null,
   pid: null,
   me: null,       // 내 응답 (로컬 사본)
-  ui: { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, miss: [] }, r3: { started: false, sel: null } },
+  ui: { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, sub: 'group', miss: [] }, r3: { started: false, sel: null } },
   nickDraft: '',
   error: null,
 };
@@ -110,7 +110,7 @@ function viewR1() {
   } else {
     const tl = TYPES.find(t => t.id === a.type)?.label;
     body += `<div class="note" style="margin-bottom:-6px">Q1 선택: <b>${esc(tl)}</b> <a href="#" data-act="r1back" style="color:var(--navy)">다시 고르기</a></div>`;
-    body += `<div class="q">Q2. 어떻게 처리하는 게 좋을까요?</div><div class="opts">` +
+    body += `<div class="q" style="margin-bottom:2px">Q2. 어떻게 처리하는 게 좋을까요?</div><div class="hint">보기의 한 줄 설명을 읽고 고르세요</div><div class="opts">` +
       r1Strats().map(s => `<button class="opt ${a.strat === s.id ? 'sel' : ''}" data-act="r1strat" data-v="${s.id}"><b>${s.label}</b><small>${s.desc}</small></button>`).join('') + `</div>`;
   }
   return top('ROUND 1 · 나누기') + `<div class="progress"><i style="width:${pct}%"></i></div>` + body;
@@ -146,19 +146,19 @@ function viewR2() {
   const refine = r2.refine || {};
   if (ui.step === 's1' && Object.keys(refine).length) ui.step = 's2';
   if (ui.step === 's2') {
-    const nq = R2_REFINE.findIndex(q => !refine[q.id]);
-    if (nq === -1) ui.step = 's3'; else ui.q = nq;
+    const nq = R2_REFINE.findIndex(q => !refine[q.id + '_g'] || !refine[q.id]);
+    if (nq === -1) ui.step = 's3'; else { ui.q = nq; ui.sub = refine[R2_REFINE[nq].id + '_g'] ? 'child' : 'group'; }
   }
 
   if (ui.step === 's1') {
     const pool = R2_PIECES.filter(p => !place[p.id]);
     const placedN = R2_PIECES.length - pool.length;
-    const chip = (p, inBox) => `<button class="chip-btn ${ui.sel === p.id ? 'picked' : ''} ${inBox ? 'in' : ''}" data-act="${inBox ? 'r2unplace' : 'r2pick'}" data-v="${p.id}">${esc(p.title)}${p.dept ? `<em>${esc(p.dept)}</em>` : ''}</button>`;
+    const chip = (p, inBox, i) => `<button class="chip-btn ${ui.sel === p.id ? 'picked' : ''} ${inBox ? 'in' : ''}" data-act="${inBox ? 'r2unplace' : 'r2pick'}" data-v="${p.id}">${inBox ? `<i class="num">${CIRC[i]}</i>` : ''}${esc(p.title)}${p.dept ? `<em>${esc(p.dept)}</em>` : ''}</button>`;
     const box = (g) => {
-      const items = R2_PIECES.filter(p => place[p.id] === g.id);
+      const items = sortedIn(g.id, place);
       return `<div class="wbox ${g.id === 'big' ? 'bin' : ''} ${ui.sel ? 'ready' : ''}" data-act="r2drop" data-v="${g.id}">
         <div class="wl">${g.id === 'big' ? '✂️ ' : ''}${g.label}${g.hint ? `<small>${esc(g.hint)}</small>` : ''}</div>
-        <div class="wi">${items.map(p => chip(p, true)).join('') || (ui.sel ? '<span class="ph-in">여기에 넣기</span>' : '')}</div></div>`;
+        <div class="wi">${items.map((p, i) => chip(p, true, i)).join('') || (ui.sel ? '<span class="ph-in">여기에 넣기</span>' : '')}</div></div>`;
     };
     return top('ROUND 2 · STEP 1 작업 배치하기') +
       `<p class="p-sub" style="margin:0 0 10px">① 아래 작업 카드를 누르고 ② 넣을 칸을 누르세요. 넣은 카드를 다시 누르면 빠집니다.</p>
@@ -171,13 +171,20 @@ function viewR2() {
   }
   if (ui.step === 's2') {
     const q = R2_REFINE[ui.q];
-    return top('ROUND 2 · STEP 2 더 구체화하기') + `<div class="progress"><i style="width:${(ui.q / R2_REFINE.length) * 100}%"></i></div>
-      <div class="task"><div class="no">너무 큰 업무 ${ui.q + 1} / ${R2_REFINE.length}</div><div class="tt">${esc(q.big)}</div></div>
-      <div class="q">다음 중 큰 업무를 구성하는 구체적인 세부 작업으로 가장 적절한 것은?</div><div class="opts">` +
+    const done = ui.q * 2 + (ui.sub === 'child' ? 1 : 0);
+    const head = top('ROUND 2 · STEP 2 더 구체화하기') + `<div class="progress"><i style="width:${(done / (R2_REFINE.length * 2)) * 100}%"></i></div>
+      <div class="task"><div class="no">✂️ 더 쪼개야 할 작업 ${ui.q + 1} / ${R2_REFINE.length}</div><div class="tt">${esc(q.big)}</div></div>`;
+    if (ui.sub === 'group') {
+      return head + `<div class="q">Q1. 「${esc(q.big)}」는 구조도에서 어디에 들어갈까요?</div><div class="opts">` +
+        R2_GROUPS.filter(g => g.id !== 'big').map(g => `<button class="opt two" data-act="r2refineg" data-v="${g.id}">${g.label} 아래</button>`).join('') + `</div>`;
+    }
+    const gl = R2_GROUPS.find(g => g.id === refine[q.id + '_g'])?.label || '';
+    return head + `<div class="note" style="margin-bottom:-6px">Q1 선택: <b>${esc(gl)} 아래</b> <a href="#" data-act="r2back" style="color:var(--navy)">다시 고르기</a></div>
+      <div class="q">Q2. 「${esc(q.big)}」는 범위가 크기 때문에 쪼갠다면, 그 아래에 들어갈 구체적인 작업은?</div><div class="opts">` +
       q.options.map(o => `<button class="opt" data-act="r2refine" data-v="${o.id}"><b>${esc(o.text)}</b></button>`).join('') + `</div>`;
   }
   // s3
-  const tree = R2_GROUPS.filter(g => g.id !== 'big').map(g => `<div class="tcol"><b>${g.label}</b>${R2_PIECES.filter(p => place[p.id] === g.id).map(p => `<span>${esc(p.title)}</span>`).join('')}</div>`).join('');
+  const tree = R2_GROUPS.filter(g => g.id !== 'big').map(g => `<div class="tcol"><b>${g.label}</b>${sortedIn(g.id, place).map((p, i) => `<span>${CIRC[i]} ${esc(p.title)}</span>`).join('')}</div>`).join('');
   return top('ROUND 2 · STEP 3 빠진 작업 찾기') +
     `<div class="mytree"><div class="wroot" style="margin-bottom:8px">내가 만든 앱 개선 프로젝트</div><div class="tcols">${tree}</div></div>
     <div class="box"><p style="margin:0;font-weight:700;font-size:17px">이대로 출시하면 문제가 생깁니다.<br>빠진 작업을 모두 골라 주세요.</p><p class="note">여러 개 선택할 수 있어요.</p></div>
@@ -263,13 +270,23 @@ function myR1Answers() {
       <div class="mr"><span class="${okS ? 'ok' : 'ng'}">${okS ? '✅' : '❌'} ${esc(sl(a.strat))}</span><span class="ans">정답 ${esc(sl(c.strat))}</span></div></div>`;
   }).join('') + `</div>`;
 }
+function answerTreeHTML() {
+  return `<div class="tcols">${R2_ANSWER_TREE.map(col => `<div class="tcol"><b>${R2_GROUPS.find(g => g.id === col.g).label}</b>${col.items.map((it, i) => `<span class="${it.miss ? 'miss' : ''} ${it.big ? 'bigit' : ''}">${CIRC[i]} ${esc(it.t)}${it.big ? ' ✂️' : ''}${it.child ? `<small>└ ${esc(it.child)}</small>` : ''}</span>`).join('')}</div>`).join('')}</div>`;
+}
 function myR2Answers() {
-  const r2 = S.me?.r2 || {}; const place = r2.place || {};
-  const groups = R2_GROUPS;
-  const tree = (map, mark) => `<div class="tcols four">${groups.map(g => `<div class="tcol"><b>${g.id === 'big' ? '✂️ ' : ''}${g.label}</b>${R2_PIECES.filter(p => map(p) === g.id).map(p => `<span class="${mark && !p.ans.includes(place[p.id]) ? 'ng' : ''}">${esc(p.title)}</span>`).join('')}</div>`).join('')}</div>`;
+  const r2 = S.me?.r2 || {}; const place = r2.place || {}; const refine = r2.refine || {};
+  const my = `<div class="tcols four">${R2_GROUPS.map(g => `<div class="tcol"><b>${g.id === 'big' ? '✂️ ' : ''}${g.label}</b>${sortedIn(g.id, place).map((p, i) => `<span class="${!p.ans.includes(g.id) ? 'ng' : ''}">${CIRC[i]} ${esc(p.title)}</span>`).join('')}</div>`).join('')}</div>`;
   const miss = r2.missing || [];
-  return `<div class="box"><h3>내가 만든 구조도</h3>${tree(p => place[p.id], true)}<p class="note">빨간 테두리 = 정답과 다른 곳</p></div>
-    <div class="box"><h3>정답 구조도</h3>${tree(p => p.ans[0], false)}</div>
+  const gl = (id) => R2_GROUPS.find(g => g.id === id)?.label || '-';
+  const refineRows = R2_REFINE.map(q => {
+    const okG = refine[q.id + '_g'] === q.group; const o = q.options.find(o => o.id === refine[q.id]); const okC = !!(o && o.correct);
+    return `<div class="myans"><div class="mt">✂️ ${esc(q.big)}</div>
+      <div class="mr"><span class="${okG ? 'ok' : 'ng'}">${okG ? '✅' : '❌'} ${esc(gl(refine[q.id + '_g']))} 아래</span><span class="ans">정답 ${esc(gl(q.group))} 아래</span></div>
+      <div class="mr"><span class="${okC ? 'ok' : 'ng'}">${okC ? '✅' : '❌'} ${esc(o?.text || '-')}</span><span class="ans">정답 ${esc(q.child)}</span></div></div>`;
+  }).join('');
+  return `<div class="box"><h3>내가 만든 구조도</h3>${my}<p class="note">빨간 테두리 = 정답과 다른 곳 · 틀린 카드는 칸의 맨 뒤 번호</p></div>
+    <div class="box"><h3>더 구체화하기</h3>${refineRows}</div>
+    <div class="box"><h3>정답 구조도</h3>${answerTreeHTML()}<p class="note">★ 주황 = 빠진 작업 · ✂️ = 더 쪼갠 작업</p></div>
     <div class="box"><h3>빠진 작업 정답</h3>${R2_MISSING.map(m => `<div class="myans"><div class="mr"><span class="${m.correct === miss.includes(m.id) ? 'ok' : 'ng'}">${m.correct === miss.includes(m.id) ? '✅' : '❌'} ${esc(m.text)}</span><span class="ans">${m.correct ? '빠진 작업 · ' + esc(m.tag) : esc(m.tag)}</span></div></div>`).join('')}</div>`;
 }
 function viewClosed(n) {
@@ -353,6 +370,12 @@ function act(a, v) {
       save({ r2: { place: { [v]: null } } }); break;
     }
     case 'r2next': ui.r2.step = 's2'; render(); scrollTo(0, 0); break;
+    case 'r2refineg': {
+      const q = R2_REFINE[ui.r2.q];
+      ui.r2.sub = 'child';
+      save({ r2: { refine: { [q.id + '_g']: v } } }); scrollTo(0, 0); break;
+    }
+    case 'r2back': ui.r2.sub = 'group'; save({ r2: { refine: { [R2_REFINE[ui.r2.q].id + '_g']: null } } }); break;
     case 'r2refine': {
       const q = R2_REFINE[ui.r2.q];
       save({ r2: { refine: { [q.id]: v } } }); scrollTo(0, 0); break;
@@ -399,7 +422,7 @@ async function boot() {
       S.pid = idStore.get(key);
       if (!S.pid) { S.pid = rid(); idStore.set(key, S.pid); }
       try { S.me = await store.getPlayer(S.runId, S.pid); } catch { S.me = null; }
-      S.ui = { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, miss: [] }, r3: { started: false, sel: null } };
+      S.ui = { r1: { started: false, i: 0, step: 'type' }, r2: { started: false, step: 's1', i: 0, q: 0, sub: 'group', miss: [] }, r3: { started: false, sel: null } };
     }
     onPhaseChange(sess?.phase);
     render();
